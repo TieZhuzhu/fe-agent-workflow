@@ -1,0 +1,109 @@
+---
+description: HTML 模板与 CSS/SCSS 代码生成规范
+globs: **/*.{vue,scss,css,sass}
+alwaysApply: false
+---
+# HTML 与 CSS 代码生成指南
+
+## HTML / Template 规范
+
+### 引号与表达式
+
+- 标签属性统一使用**双引号**：`:label="1"`、`class="filter"`
+- 模板内字符串字面量使用**单引号**：`{{ isShow ? '更多' : '' }}`
+- `:class`、三元运算等表达式两侧加空格：`:max="isShow ? 100 : 10"`
+
+### 组件使用
+
+- 组件库组件按官方 name 使用：Element UI → `el-*`，Element Plus → `el-*`
+- 自定义组件使用**大驼峰**：`<InputNumber />`、`<LibrarySelector />`
+- 较复杂判断在 `computed` 中计算后使用，避免 template 内长表达式
+
+### 语义化
+
+- 不要清一色 `div + class`；列表用 `ul` / `li`，标题用 `h1`–`h6`
+- 禁止在 HTML 中添加非动态 CSS；表单页/列表页使用项目公共样式
+
+### 条件渲染
+
+- 避免 `&&` 直接渲染组件，优先三目或 `v-if` / `v-else`：
+
+```vue
+<!-- ✅ -->
+<EditDialog v-if="visible" />
+<span v-if="count > 0">{{ count }}</span>
+<span v-else>0</span>
+
+<!-- ❌ -->
+<EditDialog v-if="visible && hasPermission" />
+{{ count && count }}
+```
+
+---
+
+## CSS / SCSS 规范
+
+### 基础要求
+
+- 统一使用 **SCSS**，`<style lang="scss" scoped>`
+- Vite 项目须在 `vite.config.ts` 配置 `css.preprocessorOptions.scss.api: 'modern-compiler'`，并使用 `sass-embedded`（避免 `legacy-js-api` 弃用警告）
+- Vue 2 深度选择器：`::v-deep` 或 `/deep/`
+- Vue 3 深度选择器：`:deep(.el-input)`
+
+### 命名
+
+- 英文单词，横杠分隔：`product-name`、`filter-actions`
+- 无需重复父级命名（scoped 已隔离），避免过长嵌套名
+
+### 属性顺序
+
+1. 定位：`position`、`display`、`left`、`top`、`z-index`
+2. 盒模型：`width`、`height`、`margin`、`padding`、`background`
+3. 文字：`font-size`、`color`、`line-height`
+4. 文本：`text-align`、`white-space`
+
+影响子元素的属性放后面。
+
+### 复用与布局
+
+- 优先 flex 布局；能用 CSS 实现的不用图片
+- 图标使用 `iconfont` 字体图标
+- **变量 / mixin 函数**（`styles/mixin.scss`）：
+  - Vite `additionalData` 注入：`@use "styles/mixin.scss" as *;`
+  - 页面 `<style>` 内直接使用 `$primary-color`、`@include flex-center`
+  - `tablePage.scss` / `formPage.scss` 等公共文件**自行** `@use './mixin.scss' as *;`（被 `@use` 的模块拿不到 additionalData）
+- **列表 / 表单公共样式**（仅 CSS 类）：`@use` **默认命名空间**，**不加 `as *`**：
+
+| 页面类型 | 引入写法 |
+|----------|----------|
+| 列表页 | `@use 'styles/tablePage.scss';` |
+| 表单页 | `@use 'styles/formPage.scss';` |
+
+- 能用组件库/layout 实现的，不重复写自定义 flex/HiTable
+
+### 示例
+
+```vue
+<style lang="scss" scoped>
+@use 'styles/tablePage.scss';
+
+.product-name {
+  display: flex;
+  align-items: center;
+
+  .name {
+    font-size: 14px;
+    color: $text-color;
+  }
+}
+</style>
+```
+
+### 禁止
+
+- 在 template 写 `style="..."` 内联样式（动态绑定除外且应最小化）
+- 大量自定义布局类替代 Element 内置能力
+- copy 相同样式到多个文件而不提取
+- 页面 `<style>` 中使用 `@import` 引入 `tablePage` / `formPage`
+- 对 `tablePage` / `formPage` 使用 `@use ... as *`（仅 mixin 允许 `as *`）
+- 手写 `mixin.$var`（变量应通过 `as *` 注入后直接用 `$var`）

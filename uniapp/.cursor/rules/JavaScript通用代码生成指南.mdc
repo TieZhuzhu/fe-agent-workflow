@@ -1,0 +1,211 @@
+---
+description: JavaScript / TypeScript 通用代码生成指南。Vue 3 默认 TS + hooks；检测到 Vue 2 时使用 JS + Options API。
+globs: **/*.{js,ts,jsx,tsx,vue}
+alwaysApply: false
+---
+
+# JavaScript 通用代码生成指南
+
+## 语言选择（与 Vue 版本联动）
+
+| 项目类型 | 默认语言 | 接口文件 |
+|----------|----------|----------|
+| **Vue 3**（默认） | **TypeScript** | `services.ts`、`types.ts` |
+| Vue 2（检测到 2.x） | JavaScript | `services.js` |
+
+Vue 3 新文件一律使用 `.ts`；Vue 2 项目沿用 `.js`，不强行引入 TS。
+
+**request 路径**：生成前先读项目已有 services 的 import；无参照时用 bootstrap 扫描路径。详见 `前端通用代码规范.mdc`。
+
+## 引号与格式
+
+- **所有 JS/TS 代码使用单引号**（template 属性双引号除外）
+- 避免嵌套三元，提升可读性
+
+## 函数设计
+
+- 函数只做一件事；复杂逻辑拆分，自顶向下组织
+- 入参不超过 2 个（上限 4 个），超出用对象传参 + 解构：
+
+```js
+// ✅
+const fetchData = ({ url, params, onSuccess }) => { ... }
+
+// ❌
+const fetchData = (url, params, onSuccess, onError, timeout) => { ... }
+```
+
+- 偏好函数式写法；类型编程仅在 TS 框架约定场景使用
+
+### Vue 3 函数写法（默认）
+
+**统一使用箭头函数**；`function` 声明仅用于极特殊场景（如需要 `function` 提升且无法改写的遗留代码），**生成代码禁止** `function` / `export function`。
+
+| 场景                             | 写法                     | 示例                                  |
+| -------------------------------- | ------------------------ | ------------------------------------- |
+| `<script setup>` 内事件/局部方法 | **箭头函数**             | `const handleSearch = () => {}`       |
+| 需 async 的交互                  | **箭头函数**             | `const handleSubmit = async () => {}` |
+| **Composable 导出**              | **箭头函数**             | `export const useCouponList = () => {}` |
+| Composable 内部方法              | **箭头函数**             | `const reload = async () => {}`       |
+| **utils 导出**                   | **箭头函数**             | `export const maskMobile = (v) => ...` |
+| **services 导出**                | **箭头函数**             | `export const GetCouponList = (data) => ...` |
+
+```ts
+// ✅ services.ts（Vue 2 / Vue 3 统一）
+export const GetCouponList = (data: CouponListParams) =>
+  request({ url: 'Coupon/List', data, method: 'post' })
+
+// ✅ utils.ts
+export const maskMobile = (value: unknown) => { /* ... */ }
+
+// ❌ 禁止 function 声明（生成代码）
+export function GetCouponList(data: CouponListParams) { ... }
+export function maskMobile(value: unknown) { ... }
+```
+
+```ts
+// ✅ script setup 内
+const handleEdit = (row: CouponItem) => {
+  currentRow.value = row
+  dialogVisible.value = true
+}
+
+// ✅ composable
+export const useCouponList = () => {
+  const reload = async () => { /* ... */ }
+  return { reload }
+}
+
+// ❌ script setup / composable / utils 内避免 function 声明
+function handleEdit(row) { ... }
+export function useCouponList() { ... }
+```
+
+### Vue 2 函数写法
+
+| 场景 | 写法 | 示例 |
+|------|------|------|
+| 交互 / 请求 | `methods` | `handleSearch() { ... }` |
+| 数据加载 | `methods` | `loadList() { ... }` |
+| 复用逻辑 | `mixins` | 混入 `methods` / `computed` |
+| **services 导出** | **箭头函数** | `export const GetCouponList = (data) => ...`（与 Vue 3 相同） |
+
+- 多条件分支考虑映射表/策略模式：
+
+```js
+const handlers = {
+  [ACTION.PUBLISH]: handlePublish,
+  [ACTION.OFFLINE]: handleOffline
+}
+handlers[action]?.()
+```
+
+## 命名
+
+- 变量、方法英文驼峰，名副其实，不用缩写
+- 同类属性合并为对象，省略冗余上下文
+- Service 导出函数大驼峰（`GetBatchList`、`MoveProduct`），与组件 methods 区分
+
+## 模块引入
+
+- 使用 alias，禁止深层相对路径（见「前端通用代码规范」）
+- 网络请求封装在 `services/`，组件内调用已封装方法
+
+## 数据与类型
+
+- 类型转换设默认值：`Number(a) || 0`、`String(a ?? '')`
+- 接口返回对象整体存储，不逐字段解构赋值到 data
+- String / Number / Boolean 不随意互转
+- **对象/数组/集合处理**用 `lodash-es`，见下文 §数据处理
+
+## 数据处理（lodash-es）
+
+> **原则：** 通用数据操作**用库、不写工具函数**；`utils.ts` 只放业务语义明确的逻辑，不重复实现 lodash 已有能力。
+
+### 引入方式
+
+- 使用 **`lodash-es`**（ESM，支持 tree-shaking），**禁止** `import _ from 'lodash'` 全量引入
+- **按需命名导入**，一个函数一行：
+
+```ts
+import { pick, omit, cloneDeep, debounce, groupBy, uniqBy, isEmpty } from 'lodash-es'
+```
+
+### 优先用 lodash-es 的场景（禁止自写等价函数）
+
+| 需求 | 用 | 禁止自写 |
+|------|-----|----------|
+| 取/删对象字段 | `pick` / `omit` | `pruneEmpty`、`filterKeys` |
+| 深拷贝 | `cloneDeep` | `deepCopy`、`jsonClone` |
+| 防抖/节流 | `debounce` / `throttle` | 手写 `setTimeout` 封装 |
+| 分组/去重 | `groupBy` / `uniq` / `uniqBy` | 手写 `reduce` 去重 |
+| 判空 | `isEmpty` / `isNil` | 多层 `== null` 判断 |
+| 路径取值 | `get` | 链式 `a?.b?.c` 过长时可 `get` |
+| 合并对象 | `merge` / `assign` | 手写递归 merge |
+| 数组差集/交集 | `difference` / `intersection` | 手写 filter + includes |
+
+### 仍放 `utils.ts` 的
+
+- **业务语义**函数：`formatOrderStatus`、`buildCouponScopeLabel`（非通用数据操作）
+- 项目内 **3+ 处复用**且 lodash **无直接等价**的组合逻辑（须注释说明为何不用 lodash）
+
+### 与接口对接规范的关系
+
+- lodash **不用于**接口入参兜底、**不用于** `normalizeRows` 猜字段（见 `接口对接规范.mdc`）
+- 入参/出参保持原样；lodash 仅用于**已确定的**结构操作（如提交前 `pick(form, keys)` 取文档字段）
+
+```ts
+// ✅ 提交前按文档字段 pick
+import { pick } from 'lodash-es'
+await SaveOrder(pick(form, ['orderNo', 'remark'] as const))
+
+// ❌ 用 lodash 做响应字段猜测
+import { get } from 'lodash-es'
+name: get(row, 'couponName') || get(row, 'title') || get(row, 'name')
+```
+
+
+## TypeScript 规范（Vue 3 项目）
+
+> **types 职责全文见 `TypeScript与types规范.mdc`（写码/优化必 Read）。**
+
+- 禁止 `@ts-ignore`
+- **页面级** Query / Item / Form / DTO → 当前页面目录 **`types.ts`**（就近原则）
+- **仅跨模块共用** → `src/types/`；**禁止**把单页类型误放全局
+- 避免 `any`；必须使用时加 `// TODO:` 说明；**规范优化任务须消除可推断的 any**
+- hook **禁止** `export interface` 页面级类型；**constants / utils 禁止**定义 type/interface（类型放 `types.ts`）
+- 分页、列表项、表单 DTO **只定义一次**，多文件 `import type` from `./types`
+
+## 常量管理
+
+- 全局业务枚举 → `constants/` 目录
+- 页面/组件独有常量 → Vue 3 用 `constants.ts`，Vue 2 用 `constants.js`
+- 需要抽取：跨文件一致的业务状态码、魔法数字
+- 不需要抽取：UI 文案、placeholder、按钮文字
+
+```js
+export const ORDER_STATUS = {
+  PROCESSING: 1,
+  SUCCESS: 2,
+  FAILURE: 3
+}
+
+const successOrders = orders.filter((o) => o.status === ORDER_STATUS.SUCCESS)
+```
+
+## 性能
+
+- 避免在循环中重复创建函数/对象
+- 大列表考虑虚拟滚动；搜索条件传给后端而非 `JSON.stringify` 前端过滤
+- 静态数据不要放入响应式 data
+
+## 代码整洁
+
+- 删除无用代码、`console.log`、注释掉的 dead code
+- 接口字段、枚举、复杂方法添加注释
+- 未完成：`// TODO: 描述`
+
+## 优先使用真实数据源
+
+- **严禁** mock 数据（假用户、占位数组、硬编码 API 响应），除非用户明确要求
+- 优先调用真实接口；空数据明确展示空状态

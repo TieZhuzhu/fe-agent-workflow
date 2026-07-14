@@ -1,0 +1,143 @@
+---
+description: 路由定义、懒加载、meta 与接口菜单树权限集成。Vue 3 用 routes.ts；Vue 2 用 routes.js。
+globs: **/*.{vue,js,ts}
+alwaysApply: false
+---
+# 路由与权限规范
+
+## 权限模型
+
+| 能力 | 来源 | 前端职责 |
+|------|------|----------|
+| 侧栏菜单 | 接口返回用户菜单权限树 | 按树渲染；节点 `{ id, name, path, children? }` |
+| 页面是否可访问 | 菜单树 path 集合 + 统一路由守卫 | 获取菜单树后**统一拦截**，不在单路由 meta 配权限码 |
+| 本地 routes | 前端模块路由文件 | 声明**全部页面** path / component / meta |
+| 按钮 / 操作 | 接口鉴权 | 无权限时接口报错；**不做**前端按钮隐藏 |
+
+---
+
+## 路由组织
+
+### 模块级路由（推荐）
+
+每个业务模块在 `views/<module>/routes.ts`（Vue 3）或 `routes.js`（Vue 2）定义路由，主路由合并：
+
+```ts
+// views/product/routes.ts
+
+export default [
+  {
+    path: '/product/tag-list',
+    name: 'productTagList',
+    component: () => import(/* webpackChunkName: "productTagList" */ './tag-list/index.vue'),
+    meta: { title: '商品标签', keepAlive: true },
+  },
+]
+```
+
+```ts
+// router/index.ts
+import productRoutes from '@/views/product/routes'
+
+export const routes = [
+  ...productRoutes,
+]
+```
+
+### 路由 path 与页面目录（强制）
+
+路由 `path` **由前端定义**，须与 `views/` 下页面路径**一一对应**：
+
+```
+path: /{module}/{page-dir}
+  ↔ views/{module}/{page-dir}/
+```
+
+| path | 页面目录 |
+|------|----------|
+| `/product/tag-list` | `views/product/tag-list/` |
+| `/product/tag-list/:id` | `views/product/tag-list/`（详情组件在同目录） |
+
+- **禁止** path 与目录不一致（如 path `/product/tag-list` 却用 `views/product/tags/`）
+- **禁止** 省略模块前缀（如 `/tag-list`）
+- 模块级单页例外：`/product/detail/:id` → `views/product/Detail.vue`（见项目结构规范）
+
+后端菜单树中的 `path` 须与本地路由 **完全一致**。
+
+### 路由命名约定
+
+| 项 | 规范 | 示例 |
+|----|------|------|
+| `path` | kebab-case，带模块前缀 | `/product/tag-list` |
+| `name` | PascalCase 英文 | `ProductTagList` |
+| `meta.title` | 中文，面包屑/页签 | `'商品标签'` |
+
+**禁止**：中文 route name、无模块前缀的扁平 path（如 `/tag-list`）。
+
+---
+
+## meta 字段
+
+| 字段 | 用途 | 必填 |
+|------|------|------|
+| `title` | 页面标题、面包屑 | 是 |
+| `activeMenu` | 详情/编辑页高亮父级菜单 path | 子页按需 |
+| `hidden` | 标记非侧栏直达页 | 按需 |
+| `keepAlive` | 是否缓存页面 | 列表页常用 `true` |
+| `public` | 跳过菜单校验（登录页等） | 公开页 |
+
+**不在 meta 维护** `permission` / `menuCode` 等页面权限码。
+
+---
+
+## 菜单树与路由守卫
+
+```ts
+interface MenuNode {
+  id: string
+  name: string
+  path: string
+  children?: MenuNode[]
+}
+```
+
+- 登录后拉取菜单树，写入 store
+- 侧栏递归渲染 `children`
+- `beforeEach`：非 `public` 路由校验 `to.path` 是否在用户可访问 path 集合内；否则跳转 403
+
+**新增页面**：只追加本地 routes；在后台权限系统配置对应菜单 `path`，与前端路由保持一致。
+
+---
+
+## 按钮 / 操作权限
+
+- **禁止**为新按钮添加 `v-permission`、`hasButtonPermission`、`v-if="canXxx"` 等前端鉴权
+- 提交 / 删除等操作：直接调接口；无权限时展示接口返回的错误信息（项目统一 request 拦截器处理）
+
+---
+
+## 页面跳转
+
+```ts
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
+router.push({ name: 'ProductDetail', params: { id: String(row.id) } })
+router.push({ name: 'ProductTagList', query: { status: '1' } })
+```
+
+- 优先 `name` 跳转，避免硬编码 path
+- `params` 中 id 等做 `String()` 转换
+
+---
+
+## 新增页面检查清单
+
+1. [ ] `views/<module>/routes.ts` 已追加路由项
+2. [ ] `router/index.ts` 已合并该模块 routes（新模块时）
+3. [ ] `meta.title` 与 PRD 页面名一致
+4. [ ] 详情/编辑子页设置 `activeMenu`（若需要）
+5. [ ] 路由 `name` 英文 PascalCase，无中文
+6. [ ] 交付「待后端配置菜单」path（与本地路由 path 一致）
+7. [ ] **未**添加前端页面/按钮权限码

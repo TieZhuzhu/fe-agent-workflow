@@ -1,0 +1,21 @@
+# Feature 状态（workflow 状态机）
+# 刷新：python3 .cursor/skills/scripts/feature-check.py sync-status <slug>
+
+slug: <feature-slug>
+status: draft
+# draft | clarifying | ready | implementing | verifying | done | archived
+
+owner: ""
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+
+blockers: []
+
+verify:
+  l1: pending   # pass | fail | pending | skip
+  l2: skip
+  l3: skip
+
+links:
+  pr: ""
+  ticket: ""

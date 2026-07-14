@@ -1,0 +1,48 @@
+# Cursor .mdc → 跨 Host Rules 导出清单
+# tier: always（全局注入）| scoped（按 paths/globs）| on-demand（仅显式 Read，不进 auto-load 目录）
+# 未列出的 .mdc 由 export-agent-host.py 按 frontmatter 自动推断
+
+rules:
+  - source: 前端通用代码规范.mdc
+    tier: always
+    slug: frontend-general
+
+  - source: 项目结构与命名规范.mdc
+    tier: scoped
+
+  - source: TypeScript与types规范.mdc
+    tier: scoped
+
+  - source: 接口对接规范.mdc
+    tier: scoped
+
+  - source: Vue代码生成指南.mdc
+    tier: scoped
+
+  - source: Vue2代码生成指南.mdc
+    tier: scoped
+
+  - source: JavaScript通用代码生成指南.mdc
+    tier: scoped
+
+  - source: HTML与CSS代码生成指南.mdc
+    tier: scoped
+
+  - source: 路由与权限规范.mdc
+    tier: scoped
+
+  - source: 表单与详情页开发指南.mdc
+    tier: scoped
+
+  - source: 复杂页面开发指南.mdc
+    tier: scoped
+
+  - source: 状态与异步数据规范.mdc
+    tier: scoped
+
+  - source: 高级表单控件开发指南.mdc
+    tier: scoped
+
+  - source: 代码规范示例参考.mdc
+    tier: on-demand
+    slug: code-examples-reference

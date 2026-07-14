@@ -1,0 +1,304 @@
+---
+description: 富文本、级联、树选择、远程搜索、日期范围、批量导入等高级表单控件的开发规范（Vue 3 主路径，Vue 2 见对照表）
+globs: **/*.{vue,ts,js}
+alwaysApply: false
+---
+
+# 高级表单控件开发指南
+
+> 标准表单字段见 `表单与详情页开发指南.mdc`。本节覆盖**复杂控件**的实现模式。
+>
+> 写码前 Read `project-conventions.md`（若存在）及 [rules-activation](../skills/shared/rules-activation.md) 预加载。
+
+---
+
+## 通用原则
+
+1. **优先项目已有封装**：先 Grep `components/`、`hooks/` 是否已有 Upload、RichText、TreeSelect 等，禁止重复造轮子
+2. **控件状态进 hook**：`v-model` 绑定、`options` 加载、校验规则放在 `hooks/useXxxForm.ts`
+3. **接口字段以文档为准**：options 的 `value`/`label` 映射写进 `constants.ts` 或接口返回后赋值
+4. **loading / empty**：远程 options 需 `loading`；无数据时 placeholder 或 `el-empty`，禁止 mock
+5. **Vue 2 项目**：对照文末「Vue 2 对照」，语法与 Element UI API 一致
+
+---
+
+## 远程搜索下拉（el-select remote）
+
+```vue
+<el-form-item label="商品" prop="productId">
+  <el-select
+    v-model="form.productId"
+    filterable
+    remote
+    reserve-keyword
+    placeholder="请输入关键词搜索"
+    :remote-method="searchProduct"
+    :loading="productLoading"
+    clearable
+  >
+    <el-option
+      v-for="item in productOptions"
+      :key="item.id"
+      :label="item.name"
+      :value="item.id"
+    />
+  </el-select>
+</el-form-item>
+```
+
+```ts
+// hooks/useXxxForm.ts
+const productOptions = ref<ProductOption[]>([])
+const productLoading = ref(false)
+
+const searchProduct = async (keyword: string) => {
+  if (!keyword.trim()) {
+    productOptions.value = []
+    return
+  }
+  productLoading.value = true
+  try {
+    const res = await SearchProduct({ keyword, pageSize: 20 })
+    productOptions.value = res.data?.data || []
+  } finally {
+    productLoading.value = false
+  }
+}
+```
+
+- 防抖：keyword 频繁变化时用 `useDebounceFn`（项目有则复用）或 300ms debounce
+- 编辑回显：打开表单时若有 `productId`，调用详情或 `SearchProduct({ id })` 填充 options
+
+---
+
+## 级联选择（el-cascader）
+
+```vue
+<el-form-item label="地区" prop="regionIds">
+  <el-cascader
+    v-model="form.regionIds"
+    :options="regionTree"
+    :props="cascaderProps"
+    clearable
+    filterable
+    placeholder="请选择"
+  />
+</el-form-item>
+```
+
+```ts
+const cascaderProps = {
+  value: 'id',
+  label: 'name',
+  children: 'children',
+  emitPath: false, // 仅叶子 id 时 false；需要完整路径数组时 true
+  checkStrictly: false, // 允许选任意级时 true
+}
+
+const loadRegionTree = async () => {
+  const res = await GetRegionTree()
+  regionTree.value = res.data || []
+}
+```
+
+- 树数据在 `onMounted` 或打开弹窗时加载一次，避免每行重复请求
+- 字段为逗号分隔字符串时，在 hook 内 `split`/`join`，模板只绑数组
+
+---
+
+## 树选择（el-tree-select，Element Plus 2.2+）
+
+项目无 `el-tree-select` 时，用项目已有 `TreeSelect` 组件或 `el-popover` + `el-tree`。
+
+```vue
+<el-form-item label="分类" prop="categoryId">
+  <el-tree-select
+    v-model="form.categoryId"
+    :data="categoryTree"
+    :props="{ value: 'id', label: 'name', children: 'children' }"
+    check-strictly
+    filterable
+    clearable
+    placeholder="请选择分类"
+  />
+</el-form-item>
+```
+
+---
+
+## 日期 / 时间范围
+
+```vue
+<!-- 日期范围 -->
+<el-form-item label="有效期" prop="dateRange">
+  <el-date-picker
+    v-model="form.dateRange"
+    type="daterange"
+    range-separator="至"
+    start-placeholder="开始日期"
+    end-placeholder="结束日期"
+    value-format="YYYY-MM-DD"
+  />
+</el-form-item>
+
+<!-- 日期时间范围 -->
+<el-form-item label="活动时间" prop="timeRange">
+  <el-date-picker
+    v-model="form.timeRange"
+    type="datetimerange"
+    value-format="YYYY-MM-DD HH:mm:ss"
+  />
+</el-form-item>
+```
+
+```ts
+// 提交前拆分为接口字段
+const buildSubmitParams = () => ({
+  ...form,
+  startTime: form.dateRange?.[0] || '',
+  endTime: form.dateRange?.[1] || '',
+})
+```
+
+- `value-format` 与接口约定一致（字符串 vs 时间戳）
+- 详情回显：接口 `startTime`/`endTime` → 组装为 `dateRange` 数组
+
+---
+
+## 数字输入（精度 / 范围）
+
+优先项目 `components/InputNumber`；无则用 `el-input-number`：
+
+```vue
+<el-form-item label="折扣" prop="discount">
+  <el-input-number
+    v-model="form.discount"
+    :min="0"
+    :max="100"
+    :precision="2"
+    :step="0.1"
+    controls-position="right"
+  />
+</el-form-item>
+```
+
+- 金额字段：确认单位（元/分），必要时 hook 内转换，types 注释单位
+
+---
+
+## 富文本编辑器
+
+1. Grep 项目是否已有 `RichText` / `WangEditor` / `TinyMCE` 封装
+2. 无封装且 PRD 明确要求时再引入，**禁止**默认添加新 npm 依赖（需用户确认）
+
+```vue
+<el-form-item label="详情" prop="content">
+  <RichTextEditor v-model="form.content" :height="400" />
+</el-form-item>
+```
+
+- 提交字段通常为 HTML 字符串；XSS 消毒由后端或项目统一工具处理
+- 校验：`content` 非空时，自定义 validator 去 HTML 标签后判空
+
+---
+
+## 文件 / 图片上传
+
+标准单文件见 `表单与详情页开发指南.mdc` §文件上传。扩展场景：
+
+| 场景 | 要点 |
+|------|------|
+| 多图 | `:limit="9"` + `form.imageUrls: string[]` |
+| 图片预览 | `list-type="picture-card"` |
+| 自定义上传 | `:http-request="handleCustomUpload"` 调 `services.ts` 的 Upload API |
+| 导入 Excel | `accept=".xlsx,.xls"` + 解析结果展示 + 确认提交接口 |
+
+```ts
+// services.ts
+export const UploadFile = (data: FormData) =>
+  request<{ data: { url: string } }>({
+    url: 'Common/Upload',
+    data,
+    method: 'post',
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+```
+
+- `uploadAction` / `uploadHeaders` 从 `project-conventions.md` 或现有页面复制，禁止硬编码 token
+
+---
+
+## 动态表单列表（增删行）
+
+```vue
+<div v-for="(item, index) in form.items" :key="item.uid" class="dynamic-row">
+  <el-form-item
+    :label="index === 0 ? '规格' : ''"
+    :prop="`items.${index}.name`"
+    :rules="itemNameRules"
+  >
+    <el-input v-model="item.name" placeholder="请输入" />
+    <el-button type="primary" link @click="handleRemoveItem(index)">删除</el-button>
+  </el-form-item>
+</div>
+<el-button type="primary" link @click="handleAddItem">+ 添加一行</el-button>
+```
+
+```ts
+let uid = 0
+const createItem = () => ({ uid: ++uid, name: '' })
+
+const handleAddItem = () => {
+  form.items.push(createItem())
+}
+
+const handleRemoveItem = (index: number) => {
+  form.items.splice(index, 1)
+}
+```
+
+- 每行需稳定 `key`（勿用 index 作 key）
+- 提交前过滤空行（若业务允许）
+
+---
+
+## 批量导入
+
+```
+components/ImportDialog/
+├── index.vue       # 下载模板 + 上传 + 结果展示
+└── hooks/useImport.ts
+```
+
+流程：下载模板链接 → 选文件上传 → 轮询/同步返回成功失败条数 → `emit('success')` 刷新列表。
+
+- 失败明细表格展示行号与原因
+- 大文件上传进度 `:on-progress`
+
+---
+
+## Figma 切图控件对齐
+
+按 Figma 开发时（见 `figma-feature-dev`）：**以 Element Plus/UI 组件库为主**，提取布局与组件类型；scoped scss 仅补组件库无法表达的差异，不追求像素级还原。
+
+---
+
+## Vue 2 对照（element-ui）
+
+| Vue 3 (Element Plus) | Vue 2 (Element UI) |
+|----------------------|---------------------|
+| `el-tree-select` | 项目 TreeSelect 或 `el-select` + `el-tree` |
+| `value-format="YYYY-MM-DD"` | `value-format="yyyy-MM-dd"` |
+| `el-button type="primary" link` | `type="text"` |
+| `v-model` on dialog | `:visible.sync` |
+| composable hook | Options API `methods` + `data` |
+
+---
+
+## 禁止
+
+1. 未查项目已有组件就新建 RichText / Upload 封装
+2. 远程 select 每次 `@focus` 全量拉取万级数据
+3. 日期范围直接提交数组而不拆 `startTime`/`endTime`（接口要求分开时）
+4. 动态列表用 index 作 `:key`
+5. 批量导入无失败反馈、无模板下载

@@ -1,0 +1,468 @@
+---
+description: Vue 3 代码生成指南（主路径）。vue@2.x 仅见 §Vue 2 兼容。
+globs: **/*.{vue,ts}
+alwaysApply: false
+---
+
+# Vue 代码生成指南
+
+## 版本判定（每次生成前必做）
+
+1. 读取 `package.json` 的 `dependencies.vue`（或 `devDependencies.vue`）
+2. 主版本为 **3** → 走 **§Vue 3 规范**（本规范默认路径）
+3. 主版本为 **2** → 走 **§Vue 2 规范**
+4. 无法判断 → **默认 Vue 3**，交付说明中标注 `// TODO: 确认 vue 版本`
+
+```
+vue ^3.x  →  Vue 3 + <script setup lang="ts"> + hooks + Pinia + Element Plus
+vue ^2.x  →  Vue 2 + Options API + mixins/methods + Vuex + Element UI
+```
+
+**禁止**在同一 `.vue` 文件内混用两种 API 风格。
+
+## 技术栈对照
+
+| 判断依据   | Vue 2（检测到 2.x 时）           | Vue 3（**默认**）                                |
+| ---------- | -------------------------------- | ------------------------------------------------ |
+| vue 版本   | `^2.x`                           | `^3.x`                                           |
+| UI 库      | element-ui                       | element-plus                                     |
+| API 风格   | Options API                      | **Composition API + `<script setup lang="ts">`** |
+| 状态       | Vuex                             | Pinia                                            |
+| 复用逻辑   | mixins / 页面 `methods`          | **`hooks/useXxx.ts`**                            |
+| 接口文件   | 页面目录 `services.js`           | **`services.ts`**                                |
+| 类型文件   | 可选 `types.js`                  | **`types.ts`**                                   |
+| 路由文件   | `routes.js`                      | **`routes.ts`**                                  |
+| 弹窗可见性 | `:visible.sync`                  | `v-model`                                        |
+| 插槽       | `slot-scope`                     | `#default="{ row }"`                             |
+| 深度选择器 | `::v-deep`                       | `:deep()`                                        |
+| 文字按钮   | `type="text"`                    | `type="primary" link`                            |
+| 列表组件   | `.cursor/components/HiTable-vue2/` | `.cursor/components/HiTable/` |
+
+生成 Vue 代码前，**必须先完成版本判定**，再选用对应章节模板。
+
+**关联规范**：
+
+- 复杂页（工作台/双栏/多 Tab）→ `复杂页面开发指南.mdc`
+- 路由与权限 → `路由与权限规范.mdc`
+
+---
+
+## 共享规范
+
+### Props / 参数命名
+
+- 不带组件名前缀：`limit` 而非 `uploaderLimit`
+- Props 必须声明类型；Vue 3 用 `defineProps<{ row: Item }>()`
+
+### 接口数据
+
+- 接口返回对象在 `data` / `ref` 中**原样存储**，禁止 `normalizeRows` 链式猜字段
+- 展示兜底仅在模板/formatter，单字段用 `??`（`0` 为合法值时不用 `||`）
+- 完整约定见 **`接口对接规范.mdc`**
+
+### 条件渲染与状态
+
+- 复杂条件提取为 computed
+- 页面局部状态放组件/composable；跨页面低频共享才用 store
+- Context 避免用于频繁更新数据
+
+### Hooks 注意
+
+- `useEffect` 类逻辑：不要把 router 对象直接放入依赖数组（Vue 3 `watch` 同理需谨慎）
+- 不通过 `||` / `??` 给对象、数组、函数设默认值
+- `<script setup>` 内事件与局部方法用 **`const handleXxx = () => {}`**，见 `JavaScript通用代码生成指南.mdc`
+
+### 常量
+
+```js
+export const COUPON_STATUS = {
+  ENABLED: 1,
+  DISABLED: 2
+}
+```
+
+- 业务枚举 key 用英文；UI label 可用中文
+- 禁止用中文或展示文案作代码分支 key
+
+---
+
+## Vue 3 规范（默认）
+
+> 未检测到 `vue@2.x` 时，**一律按本节生成**。
+
+### 目录与职责（views 下）
+
+```
+views/marketing/coupon/
+├── index.vue           # 标准列表：主流程在此；复杂页：布局编排
+├── services.ts         # 本页接口
+├── constants.ts        # 本页常量
+├── types.ts            # 本页类型
+├── utils.ts            # 本页工具
+├── hooks/              # 仅在有独立子域时创建（见 §hooks 拆分边界）
+│   └── useCouponForm.ts
+└── components/
+    ├── FilterForm/index.vue
+    ├── EditDialog/index.vue
+    └── index.ts
+```
+
+| 文件                        | 职责                                      |
+| --------------------------- | ----------------------------------------- |
+| `index.vue`                 | **标准列表页**：布局 + 筛选/列表/分页主流程；复杂页：布局编排 + hook 组合 |
+| `hooks/useXxx.ts`           | **独立子域**（表单提交、复杂页单区块）；非整页 logic 容器 |
+| `components/`               | 单一 UI 区块，大驼峰目录 + index.vue      |
+| `types.ts` / `constants.ts` | 本页类型与常量                            |
+| `services.ts`               | 本页接口调用                              |
+
+### hooks 拆分边界（强制）
+
+| 页面类型 | `index.vue` 保留 | 才抽 `hooks/` |
+|----------|------------------|---------------|
+| **标准列表页** | `query`、`loading`、`loadList`、`handleSearch`/`Reset`、弹窗 `visible`、表格选中 | 单文件 **>400 行**且职责可切；或**独立子流程**（如仅弹窗内复杂表单 → `useXxxForm`） |
+| **组合页** | 主列表全套逻辑 | 弹窗/编辑子域 → `useXxxForm` 或子组件内逻辑 |
+| **表单/详情页** | 模板绑定、简单 computed | `useXxxForm` / `useXxxDetail` |
+| **复杂页** | 布局、Tab 切换、组合多个 hook | **每数据域**一个 hook（如 `useSummary` + `useTaskList`） |
+
+**禁止：**
+
+- 创建 `useCustomerManage` 返回页面**全部** state + handlers，`index.vue` 只剩 `const { ... } = useCustomerManage()`
+- 标准列表页「为了有 hooks 目录」而整页下沉
+
+**允许：**
+
+- 列表页 logic 在 `index.vue`（与下方列表页模板一致）
+- 2+ 页面复用的 composable → 模块 `hooks/` 或 `@/hooks/`
+
+### 列表页模式（Vue 3 + HiTable）
+
+列表页使用 `HiTable` + 原生 `el-table-column`。组件源码位于 `.cursor/components/HiTable/`（Vue 3 + Element Plus），生成时复制到项目 `components/HiTable/`。
+
+```vue
+<template>
+  <div>
+    <el-form inline :model="form" class="filter" size="small" label-width="100px">
+      <el-form-item label="名称：">
+        <el-input v-model="form.name" placeholder="请输入" />
+      </el-form-item>
+      <el-form-item class="filter-actions">
+        <el-button type="primary" class="button-small" @click="handleSearch">筛选</el-button>
+        <el-button type="primary" link class="button-reset" @click="handleClear">重置筛选条件</el-button>
+      </el-form-item>
+    </el-form>
+    <HiTable ref="tableRef" url="Coupon/List" :params="form" @selection-change="handleSelectionChange">
+      <template #toolbar>
+        <el-button size="small">批量操作</el-button>
+      </template>
+      <el-table-column type="selection" width="48" />
+      <el-table-column label="名称" prop="name" min-width="100" />
+      <el-table-column label="操作" width="120" align="right">
+        <template #default="{ row }">
+          <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
+        </template>
+      </el-table-column>
+    </HiTable>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { reactive, ref } from 'vue'
+import HiTable from '@/components/HiTable/index.vue'
+
+const tableRef = ref<InstanceType<typeof HiTable>>()
+const form = reactive({ name: '' })
+
+const handleSearch = () => {
+  tableRef.value?.reload()
+}
+
+const handleClear = () => {
+  form.name = ''
+  handleSearch()
+}
+
+const handleSelectionChange = (rows: unknown[]) => {
+  // ...
+}
+
+const handleEdit = (row: Record<string, unknown>) => {
+  // ...
+}
+</script>
+
+<style lang="scss" scoped>
+@use 'styles/tablePage.scss';
+</style>
+```
+
+- 列定义使用原生 `el-table-column`，插槽用 `#default="{ row }"`
+- **列对齐**：除最后一列「操作」列设 `align="right"` 外，其余列**不设置** `align`（使用默认左对齐）
+- 列表请求内置在 `components/HiTable/utils/listRequest.ts`
+- 远程分页默认开启，传 `url` + `:params`，刷新调用 `tableRef.value?.reload()`
+- 工具栏/底栏使用 `#toolbar`、`#footer` 插槽
+
+### 弹窗组件（Vue 3）
+
+```vue
+<template>
+  <el-dialog v-model="visible" title="编辑" width="600px" @closed="handleClosed">
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+      <el-form-item label="名称" prop="name">
+        <el-input v-model="form.name" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="visible = false">取消</el-button>
+      <el-button type="primary" @click="handleConfirm">确定</el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import type { FormInstance, FormRules } from 'element-plus'
+import { SaveCoupon } from '../services'
+
+const props = defineProps<{
+  modelValue: boolean
+  record?: Record<string, unknown>
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+  success: []
+}>()
+
+const visible = ref(props.modelValue)
+const formRef = ref<FormInstance>()
+const form = ref({ name: '' })
+const rules: FormRules = { name: [{ required: true, message: '请输入名称' }] }
+
+watch(
+  () => props.modelValue,
+  (val) => {
+    visible.value = val
+  }
+)
+watch(visible, (val) => {
+  emit('update:modelValue', val)
+})
+
+const handleConfirm = async () => {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+  await SaveCoupon(form.value)
+  emit('success')
+  visible.value = false
+}
+
+const handleClosed = () => {
+  formRef.value?.resetFields()
+}
+</script>
+```
+
+### Composable 示例（独立子域，非整页容器）
+
+```ts
+// hooks/useCouponForm.ts — 表单/弹窗子域才抽 hook
+export const useCouponForm = () => {
+  const formRef = ref<FormInstance>()
+  const submitting = ref(false)
+
+  const handleSubmit = async () => {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
+    submitting.value = true
+    try {
+      await saveCoupon(form.value)
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  return { formRef, submitting, handleSubmit }
+}
+```
+
+标准列表页主流程放在 `index.vue`，见上方 §列表页模式。
+
+### Service
+
+```ts
+import request from '@/config/request'
+import type { CouponPageParams, CouponPageResult } from './types'
+
+/** 优惠券列表 */
+export const GetCouponList = (data: CouponPageParams) =>
+  request<CouponPageResult>({ url: 'Coupon/List', data, method: 'post' })
+```
+
+### 复杂页面
+
+工作台、双栏、多 Tab 等页面**不按列表页模板生成**，遵循 `复杂页面开发指南.mdc`：
+
+- `index.vue` 以布局组装为主
+- 每 UI 区块一个子组件 + 一个 hook
+- 跨区块编排放 `index.vue`
+
+---
+
+## Vue 2 规范（仅当 package.json 中 vue 为 2.x）
+
+> **仅当**检测到 `vue@^2.x` 时启用；否则跳过本节。
+>
+> **表单 / 详情 / 复杂页 / Vuex 状态**的完整规范见 [`Vue2代码生成指南.mdc`](./Vue2代码生成指南.mdc)。本节保留**列表页**与**接口层**速查。
+
+### SFC 结构顺序
+
+```vue
+<template>...</template>
+
+<script>
+import Xxx from '@/components/Xxx'
+import { mapState } from 'vuex'
+
+export default {
+  components: { Xxx },
+  props: { ... },
+  data() { return { ... } },
+  computed: { ... },
+  watch: { ... },
+  methods: { ... },
+  mounted() { ... },
+  destroyed() { ... },
+}
+</script>
+
+<style lang="scss" scoped>
+@use 'styles/tablePage.scss';
+</style>
+```
+
+### 列表页模式（Vue 2 + HiTable）
+
+列表页使用 `HiTable` + 原生 `el-table-column`。组件源码位于 `.cursor/components/HiTable-vue2/`（Vue 2 + Element UI），生成时复制到项目 `components/HiTable/`。
+
+```vue
+<template>
+  <div>
+    <el-form inline :model="form" class="filter" size="small" label-width="100px">
+      <el-form-item label="名称：">
+        <el-input v-model="form.name" placeholder="请输入" />
+      </el-form-item>
+      <el-form-item class="filter-actions">
+        <el-button type="primary" class="button-small" @click="handleSearch">筛选</el-button>
+        <el-button type="text" class="button-reset" @click="handleClear">重置筛选条件</el-button>
+      </el-form-item>
+    </el-form>
+    <HiTable
+      ref="tableRef"
+      url="Coupon/List"
+      :params="form"
+      @selection-change="handleSelectionChange"
+    >
+      <template slot="toolbar">
+        <el-button size="small">批量操作</el-button>
+      </template>
+      <el-table-column type="selection" width="48" />
+      <el-table-column label="名称" prop="name" min-width="100" />
+      <el-table-column label="操作" width="120" fixed="right" align="right">
+        <template slot-scope="scope">
+          <el-button type="text" @click="handleEdit(scope.row)">编辑</el-button>
+        </template>
+      </el-table-column>
+    </HiTable>
+  </div>
+</template>
+
+<script>
+import HiTable from '@/components/HiTable/index.vue'
+
+export default {
+  components: { HiTable },
+  data() {
+    return { form: { name: '' } }
+  },
+  methods: {
+    handleSearch() {
+      this.$refs.tableRef.reload()
+    },
+    handleClear() {
+      this.form = { name: '' }
+      this.handleSearch()
+    },
+    handleSelectionChange(rows) { /* ... */ },
+    handleEdit(row) { /* ... */ },
+  },
+}
+</script>
+
+<style lang="scss" scoped>
+@use 'styles/tablePage.scss';
+</style>
+```
+
+- 列定义使用原生 `el-table-column`，插槽用 `slot-scope`
+- **列对齐**：除最后一列「操作」列设 `align="right"` 外，其余列**不设置** `align`
+- 列表请求内置在 `components/HiTable/utils/listRequest.js`
+- 远程分页默认开启，传 `url` + `:params`，刷新调用 `this.$refs.tableRef.reload()`
+- 工具栏/底栏使用 `slot="toolbar"`、`slot="footer"`
+
+### 接口层（页面目录 services.js）
+
+```js
+// views/marketing/coupon/services.js
+import request from '@/config/request'
+
+/** 优惠券列表 */
+export const GetCouponList = (data) => request({ url: 'Coupon/List', data, method: 'post' })
+```
+
+- 接口定义在**当前页面目录**下，导出函数大驼峰，JSDoc 注释接口用途
+- 页面内 `import { GetCouponList } from './services'`
+
+### 公共组件封装
+
+```vue
+<script>
+export default {
+  props: {
+    value: { type: String, default: '' },
+    config: { type: Object, default: () => ({}) }
+  },
+  data() {
+    return { content: this.value }
+  },
+  watch: {
+    content(value) {
+      this.$emit('input', value)
+    }
+  },
+  methods: {
+    handleConfirm(items) {
+      /* 交互逻辑 */
+    }
+  }
+}
+</script>
+```
+
+### Router
+
+- 路由定义在模块目录：`views/marketing/routes.js` → 在 `router/index.js` 合并
+- `name` 用 PascalCase 英文，禁止中文
+
+---
+
+## 禁止的反模式
+
+1. **万能配置页**：一个 vue + JSON config 承载多个路由
+2. **中文作代码 key**：`loaders['地址设置']` → 用英文常量
+3. **config-driven 动态渲染整页**：应用 typed 组件替代 `field.type === 'select'`
+4. **滥用 any**（Vue 3 TS）：为每个实体定义 interface
+5. **过度 normalize**：见 `接口对接规范.mdc`；每个模块独立 types，不做万能 adapter
+6. **前端伪造数据**：接口未就绪用 `el-empty`，不捏造字段
+7. **字符串匹配分支**：`title.includes('素材')` → 用枚举或 route meta
+8. **单文件堆叠 20+ API import**：页面只 import 本页 service
+9. **重复造样式**：优先 Element 布局组件

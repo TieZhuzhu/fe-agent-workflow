@@ -1,0 +1,5 @@
+# 不提交到权威仓
+**/.cursor/project-conventions.md
+**/specs/_index.md
+.DS_Store
+.idea

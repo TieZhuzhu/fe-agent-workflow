@@ -1,0 +1,171 @@
+---
+description: uni-app 项目目录结构、文件命名与就近原则（权威规范）
+globs: **/*.{vue,js,ts,json}
+alwaysApply: false
+---
+
+# 项目结构与命名规范
+
+## 顶层目录职责
+
+| 目录 | 用途 |
+|------|------|
+| `pages/` | **主包页面**（tabBar + 启动必要页） |
+| `subPackages/` | **分包页面**，按功能模块分子目录 |
+| `components/` | 跨模块复用公共组件 |
+| `static/` | 静态资源（图片、字体等，不参与编译打包路径需注意体积） |
+| `common/` / `utils/` | 工具函数、request、config、常量（按项目实际） |
+| `store/` | Vuex / Pinia |
+| `service/` / `services/` | **集中式 API**（存量项目；新建默认页面级） |
+| `hooks/` | 跨模块复用 composables（Vue 3） |
+| `uni_modules/` | uni-app 插件市场组件 |
+| `pages.json` | 路由与窗口配置 |
+| `manifest.json` | 应用配置 |
+
+## 页面目录结构
+
+### 主包页面
+
+```
+pages/
+├── index/
+│   └── index.vue
+├── cart/
+│   └── cart.vue          # 单文件页面允许
+└── user/
+    └── center.vue
+```
+
+### 分包页面（推荐）
+
+```
+subPackages/
+└── product/              # 功能模块 = 子包 root 名
+    ├── list.vue          # 单文件页
+    ├── detail.vue
+    └── search/
+        ├── index.vue     # 多文件页目录
+        ├── services.js
+        ├── constants.js
+        ├── types.ts
+        └── components/
+            └── FilterBar/
+                └── index.vue
+```
+
+**子包 root** 与 `pages.json` 中 `subPackages[].root` 一致，如 `subPackages/product`。
+
+## 就近原则
+
+| 内容 | 存放位置 |
+|------|----------|
+| 页面接口（默认） | 当前页面目录 `services.js` / `services.ts` |
+| 页面接口（存量集中式） | `service/<module>.js`（bootstrap 扫描确认，沿用惯例） |
+| 组件独有接口 | `components/<Name>/services.*` |
+| constants / types / utils | 当前页面或组件目录 |
+| 模块内共用组件 | `subPackages/<module>/components/` 或顶层 `components/` |
+| 页面私有组件 | 当前页面 `components/` |
+
+**提升规则：**
+
+- 同子包多页复用 → `subPackages/<module>/components/`
+- 跨子包复用 → 顶层 `components/` 或 `hooks/`
+- 仅单页使用 → 页面内 `components/`
+
+## 接口定义
+
+### 模式 A：页面级（默认，新建推荐）
+
+```
+subPackages/order/list/
+├── index.vue
+├── services.js
+├── types.js
+└── constants.js
+```
+
+```js
+// services.js
+import request from '@/common/request'
+
+export const GetOrderList = (data) =>
+  request({ url: 'order/list', data, method: 'post' })
+```
+
+### 模式 B：集中式（存量项目沿用）
+
+```
+service/
+├── order.js
+├── product.js
+└── cart.js
+```
+
+bootstrap 扫描到集中式时，**新接口追加到对应模块文件**，不强行拆页面级。
+
+| 场景 | 做法 |
+|------|------|
+| 老项目已有 `service/` | 继续集中式 |
+| 新项目 / 用户要求页面级 | 页面目录 `services.*` |
+| 单页独有接口 | 页面级 |
+| 多模块共用 | 集中式模块文件或 `common/` |
+
+## components 目录结构
+
+```
+components/
+├── ProductCard/
+│   ├── index.vue
+│   └── services.js       # 可选
+└── CustomNav/
+    └── index.vue
+```
+
+- 入口统一 `index.vue`
+- 引用：`import ProductCard from '@/components/ProductCard'`
+- **禁止** `components/Foo.vue` 平铺（历史遗留须迁移）
+
+## constants 与 utils 分离
+
+| 文件 | 只放 |
+|------|------|
+| `constants.js` | 枚举、Tab、静态 options |
+| `utils.js` | 格式化、校验、纯函数 |
+
+**禁止** constants 与 utils 混放同一文件。
+
+## types（Vue 3 TS）
+
+| 文件 | 职责 |
+|------|------|
+| `types.ts` | 页面全部 interface / type |
+| `constants.ts` | 枚举与 options |
+| `utils.ts` | 工具函数 |
+| `hooks/` | 状态与请求逻辑 |
+
+细则见 `TypeScript与types规范.mdc`。
+
+## 文件命名
+
+| 类型 | 规范 | 示例 |
+|------|------|------|
+| 页面文件/目录 | kebab-case | `order-detail.vue`、`medication-guide/` |
+| 组件目录 | PascalCase | `ProductCard/`、`SkuPicker/` |
+| 非 Vue 文件 | camelCase | `services.js`、`useOrderList.ts` |
+| Service 导出 | PascalCase | `GetOrderList`、`SaveAddress` |
+| hooks | camelCase + use 前缀 | `useOrderList.ts` |
+
+## 单文件行数
+
+单文件建议不超过 **800 行**；可拆 `components/` 或 `hooks/`，合理即可。
+
+## Vue 2 / Vue 3 结构差异
+
+| 项 | Vue 2 | Vue 3 |
+|----|-------|-------|
+| 页面入口 | Options API | `<script setup lang="ts">` |
+| 接口文件 | `services.js` | `services.ts` |
+| 类型 | `types.js` / JSDoc | `types.ts` |
+| 复用逻辑 | mixins / methods | `hooks/useXxx.ts` |
+
+**目录结构相同**，差异仅在写法。生成前读取 `package.json` 判定版本。

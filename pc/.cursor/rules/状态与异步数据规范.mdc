@@ -1,0 +1,114 @@
+---
+description: Vue 3 页面 loading/empty/error 状态、Pinia 使用边界、接口异步数据管理
+globs: **/*.{vue,ts}
+alwaysApply: false
+---
+
+# 状态与异步数据规范
+
+---
+
+## 状态存放原则
+
+| 数据 | 存放位置 |
+|------|----------|
+| 单页列表/表单/详情 | 页面 `hooks/useXxx.ts` 内 `ref` / `reactive` |
+| 跨页面低频共享（用户信息、权限） | Pinia `stores/` |
+| 组件内 UI 态（弹窗 visible） | 组件内或父级 `ref` |
+| 服务端列表/详情 | 接口返回后**原样**赋值，**禁止 mock**；见 `接口对接规范.mdc` |
+
+**不要把页面级列表数据放 Pinia**（避免全局污染）；仅真正跨模块共享的才用 store。
+
+---
+
+## 异步三态（必做）
+
+每个数据请求域必须处理：
+
+```ts
+const loading = ref(false)
+const error = ref<string>('')
+const data = ref<Item[]>([])
+
+const reload = async () => {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await GetList(params)
+    data.value = res.data || []
+  } catch (e) {
+    error.value = '加载失败，请重试'
+    data.value = []
+  } finally {
+    loading.value = false
+  }
+}
+```
+
+模板：
+
+```vue
+<div v-loading="loading">
+  <el-alert v-if="error" type="error" :title="error" show-icon />
+  <el-empty v-else-if="!loading && !data.length" description="暂无数据" />
+  <template v-else><!-- 正常内容 --></template>
+</div>
+```
+
+---
+
+## Pinia Store（跨模块）
+
+```ts
+// stores/user.ts
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { GetUserInfo } from '@/api/user'
+
+export const useUserStore = defineStore('user', () => {
+  const profile = ref<UserProfile | null>(null)
+  const loading = ref(false)
+
+  const loadProfile = async () => {
+    loading.value = true
+    try {
+      const res = await GetUserInfo()
+      profile.value = res.data || null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  return { profile, loading, loadProfile }
+})
+```
+
+- 新建 store 仅当 **2+ 模块** 需要同一份数据
+- 页面仍通过 `services.ts` 调接口，store 可调用 services 或 `@/api`
+
+---
+
+## 提交态
+
+```ts
+const submitting = ref(false)
+
+const handleSubmit = async () => {
+  if (submitting.value) return
+  submitting.value = true
+  try {
+    await SaveXxx(form)
+  } finally {
+    submitting.value = false
+  }
+}
+```
+
+---
+
+## 禁止
+
+1. 无 loading 的接口请求（用户无感知）
+2. 接口失败静默吞掉（至少 message 或 error 态）
+3. 把所有页面 state 塞进一个万能 store
+4. 静态配置放入 `reactive` 做双向绑定

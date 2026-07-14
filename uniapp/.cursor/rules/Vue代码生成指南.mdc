@@ -1,0 +1,147 @@
+---
+description: Vue 3 + uni-app 页面代码生成。Composition API、script setup、Pinia/Vuex、hooks 拆分。
+globs: **/*.{vue,ts,js}
+alwaysApply: false
+---
+
+# Vue 3 代码生成指南（uni-app）
+
+> 须配合 **`uniapp代码生成指南.mdc`** 使用。本文件约定 Vue 3 写法；路由/分包/组件选用见 uni-app 指南。
+
+## 适用判定
+
+`package.json` 中 `vue` 为 `^3.x` 或 uni-app Vue 3 项目时启用。
+
+**禁止**在同一文件混用 Options API 与 `<script setup>`。
+
+## script setup 模板
+
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { onLoad, onShow, onPullDownRefresh } from '@dcloudio/uni-app'
+import { GetDetail } from './services'
+import type { DetailData } from './types'
+
+const id = ref('')
+const detail = ref<DetailData | null>(null)
+
+const displayPrice = computed(() => detail.value?.price ?? '-')
+
+const loadDetail = async () => {
+  detail.value = await GetDetail({ id: id.value })
+}
+
+const handleSubmit = async () => {
+  // 交互逻辑
+}
+
+onLoad((options) => {
+  id.value = options?.id ?? ''
+})
+
+onMounted(() => {
+  if (id.value) loadDetail()
+})
+</script>
+```
+
+## 状态管理
+
+| 场景 | 方案 |
+|------|------|
+| 页面局部状态 | `ref` / `reactive` |
+| 跨页共享 | Pinia（优先）或 Vuex 4 |
+| 登录态、门店信息 | store 模块，按项目惯例 |
+
+```ts
+import { useUserStore } from '@/store/user'
+const userStore = useUserStore()
+```
+
+## hooks 拆分边界
+
+| 场景 | 做法 |
+|------|------|
+| 简单列表/详情 | 逻辑可放页面，不必强行抽 hook |
+| 表单提交 | `hooks/useXxxForm.ts` |
+| 复杂多 Tab | 每 Tab 一个 hook |
+| 跨页复用 | `@/hooks/useXxx.ts` |
+
+```ts
+// hooks/useOrderForm.ts
+import { ref } from 'vue'
+import type { OrderForm } from '../types'
+import { SubmitOrder } from '../services'
+
+export const useOrderForm = () => {
+  const form = ref<OrderForm>({ addressId: '', remark: '' })
+  const submitting = ref(false)
+
+  const handleSubmit = async () => {
+    submitting.value = true
+    try {
+      await SubmitOrder(form.value)
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  return { form, submitting, handleSubmit }
+}
+```
+
+**反模式**：页面仅 `const { a,b,c,... } = useEverything()`。
+
+## 函数写法
+
+**统一箭头函数**（含 composable、utils、services）：
+
+```ts
+export const GetList = (data: Record<string, unknown>) =>
+  request({ url: 'list', data, method: 'post' })
+
+export const useProductList = () => {
+  const loadList = async () => { /* ... */ }
+  return { loadList }
+}
+```
+
+生成代码**禁止** `function` / `export function`。
+
+## 生命周期映射
+
+| uni-app | 用途 |
+|---------|------|
+| `onLoad` | 接收路由参数，首次加载数据 |
+| `onShow` | 页显示（从子页返回刷新） |
+| `onReady` | 初次渲染完成 |
+| `onPullDownRefresh` | 下拉刷新 |
+| `onReachBottom` | 触底加载 |
+| `onShareAppMessage` | 小程序分享 |
+
+从 `@dcloudio/uni-app` 导入；与 `onMounted` 分工：`onLoad` 拿参数，`onMounted` 做 DOM 相关。
+
+## 类型
+
+- 页面类型全部放 `types.ts`
+- services 用 `import type`
+- 禁止页面级 interface 散落在 hook 或 vue 文件
+
+## 与 uview-ui
+
+uview 3.x 支持 Vue 3：
+
+```vue
+<u-button type="primary" @click="handleSubmit">提交</u-button>
+```
+
+仍须遵守「原生优先」：能用 `button` 就不用 `u-button`。
+
+## 检查清单
+
+- [ ] `<script setup lang="ts">`
+- [ ] 无 Options API 混用
+- [ ] 类型在 `types.ts`
+- [ ] services 箭头函数导出
+- [ ] uni 生命周期从 `@dcloudio/uni-app` 导入

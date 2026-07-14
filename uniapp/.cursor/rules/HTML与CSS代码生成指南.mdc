@@ -1,0 +1,127 @@
+---
+description: uni-app 模板与 SCSS 样式规范。view/text 原生标签、rpx、安全区、条件编译样式。
+globs: **/*.{vue,scss,css,sass}
+alwaysApply: false
+---
+
+# HTML 与 CSS 代码生成指南（uni-app）
+
+## Template 规范
+
+### 标签选用
+
+- **布局**：`view`（禁止用 `div`，除 H5 条件编译特殊场景）
+- **文本**：`text`（长文本、可点击文本）
+- **图片**：`image`，必须设 `mode`（`aspectFill`、`widthFix` 等）
+- **列表**：`scroll-view` 或页面级滚动 + `onReachBottom`
+- **按钮**：`button`（开放能力如 getPhoneNumber 必须用原生 button）
+
+### 引号
+
+- 属性双引号：`:class="active"`、`class="page"`
+- 模板字符串单引号：`{{ status === 1 ? '已完成' : '进行中' }}`
+
+### 组件
+
+- 自定义组件大驼峰：`<ProductCard />`、`<CustomNav />`
+- uview：`u-` 前缀，easycom 自动引入
+- 复杂判断放 `computed`，避免 template 长表达式
+
+### 条件渲染
+
+```vue
+<!-- ✅ -->
+<SkuPicker v-if="visible" />
+<text v-if="count > 0">{{ count }}</text>
+<text v-else>0</text>
+
+<!-- ❌ -->
+<SkuPicker v-if="visible && skuList.length" />
+```
+
+---
+
+## CSS / SCSS 规范
+
+### 基础
+
+- `<style lang="scss" scoped>`
+- 尺寸单位优先 **rpx**（750 设计稿基准）
+- 1px 边框：`transform: scaleY(0.5)` 或项目 mixin
+- 安全区底部：`padding-bottom: env(safe-area-inset-bottom)`
+
+### 深度选择器
+
+| Vue | 写法 |
+|-----|------|
+| Vue 2 | `::v-deep` 或 `/deep/` |
+| Vue 3 | `:deep(.u-input)` |
+
+### 命名
+
+- 英文 kebab-case：`product-card`、`page-header`
+- 页面根节点建议 `.page` 或 BEM 块名
+
+### 布局
+
+- 优先 flex；移动端单列为主
+- 固定底栏：`position: fixed; bottom: 0; left: 0; right: 0;` + 安全区
+- 自定义导航栏高度 = 状态栏 + 导航内容区（用项目工具变量）
+
+### 公共样式
+
+- 全局变量放 `uni.scss` 或项目 `common/`、`static/` 样式入口
+- 页面内 `@import` 或 `@use` 项目公共 scss（以 bootstrap 扫描为准）
+- 多端差异样式用条件编译：
+
+```scss
+/* #ifdef MP-WEIXIN */
+.page-header {
+  padding-top: 88rpx;
+}
+/* #endif */
+
+/* #ifdef H5 */
+.page-header {
+  padding-top: 44px;
+}
+/* #endif */
+```
+
+### 示例
+
+```vue
+<style lang="scss" scoped>
+.page {
+  min-height: 100vh;
+  background: #f5f5f5;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.product-card {
+  display: flex;
+  padding: 24rpx;
+  background: #fff;
+  border-radius: 16rpx;
+
+  .cover {
+    width: 160rpx;
+    height: 160rpx;
+    border-radius: 8rpx;
+  }
+
+  .name {
+    font-size: 28rpx;
+    color: #333;
+    line-height: 40rpx;
+  }
+}
+</style>
+```
+
+### 禁止
+
+- template 内联 `style`（动态最小化例外）
+- 全用 `px` 不做 rpx 适配（H5 特定场景除外）
+- 复制相同样式块到多文件不提取
+- PC 端布局思维（多列复杂 grid）直接套用到小程序

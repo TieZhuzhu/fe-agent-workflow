@@ -1,0 +1,235 @@
+---
+description: Vue 3 表单页、详情页、分步向导、弹窗表单的生成规范（含校验、提交、只读展示）
+globs: **/*.{vue,ts}
+alwaysApply: false
+---
+
+# 表单与详情页开发指南
+
+> **Vue 3 专用**。新建/编辑表单、只读详情、分步向导按本节生成。
+
+---
+
+## 页面类型
+
+| 类型 | 特征 | 结构 |
+|------|------|------|
+| 独立表单页 | 整页录入 + 底部提交 | `hooks/useXxxForm.ts` + `index.vue` |
+| 弹窗/抽屉表单 | 列表页内编辑 | `components/EditDialog/` |
+| 详情页 | 只读分组展示 | `hooks/useXxxDetail.ts` + 描述列表 |
+| 分步向导 | 多步录入 | `components/StepXxx/` + `hooks/useWizard.ts` |
+
+表单页引入 `@use 'styles/formPage.scss';`。
+
+---
+
+## 目录结构（独立表单页）
+
+```
+views/product/coupon-create/
+├── index.vue
+├── services.ts
+├── types.ts
+├── constants.ts
+├── hooks/
+│   └── useCouponForm.ts
+└── components/              # 按需：复杂区块拆分
+    └── BasicInfo/index.vue
+```
+
+---
+
+## 独立表单页模板
+
+```vue
+<template>
+  <div class="form-page">
+    <el-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      label-width="120px"
+      class="form-body"
+    >
+      <el-form-item label="名称" prop="name">
+        <el-input v-model="form.name" placeholder="请输入" maxlength="50" show-word-limit />
+      </el-form-item>
+      <el-form-item label="状态" prop="status">
+        <el-radio-group v-model="form.status">
+          <el-radio v-for="item in STATUS_OPTIONS" :key="item.value" :value="item.value">
+            {{ item.label }}
+          </el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </el-form>
+    <div class="form-footer">
+      <el-button @click="handleCancel">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useCouponForm } from './hooks/useCouponForm'
+
+const { formRef, form, rules, submitting, STATUS_OPTIONS, handleSubmit, handleCancel } = useCouponForm()
+</script>
+
+<style lang="scss" scoped>
+@use 'styles/formPage.scss';
+</style>
+```
+
+---
+
+## Composable（表单逻辑）
+
+```ts
+// hooks/useCouponForm.ts
+import { ref, reactive, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { FormInstance, FormRules } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { GetCouponDetail, SaveCoupon } from '../services'
+import { STATUS_OPTIONS } from '../constants'
+import type { CouponForm } from '../types'
+
+export const useCouponForm = () => {
+  const route = useRoute()
+  const router = useRouter()
+  const formRef = ref<FormInstance>()
+  const submitting = ref(false)
+  const form = reactive<CouponForm>({
+    name: '',
+    status: STATUS_OPTIONS[0].value,
+  })
+
+  const rules: FormRules = {
+    name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+    status: [{ required: true, message: '请选择状态', trigger: 'change' }],
+  }
+
+  const loadDetail = async () => {
+    const id = String(route.params.id || '')
+    if (!id) return
+    const res = await GetCouponDetail({ id })
+    Object.assign(form, res.data || {})
+  }
+
+  const handleSubmit = async () => {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
+    submitting.value = true
+    try {
+      await SaveCoupon({ ...form })
+      ElMessage.success('保存成功')
+      router.back()
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  const handleCancel = () => {
+    router.back()
+  }
+
+  onMounted(loadDetail)
+  return { formRef, form, rules, submitting, STATUS_OPTIONS, handleSubmit, handleCancel }
+}
+```
+
+- 校验规则放 `rules`，枚举放 `constants.ts`
+- 编辑页通过 `route.params.id` 加载详情
+- 提交成功 `router.back()` 或跳转列表（按 PRD）
+
+---
+
+## 详情页模板
+
+```vue
+<template>
+  <div v-loading="loading" class="detail-page">
+    <el-empty v-if="!loading && !detail" description="暂无数据" />
+    <template v-else-if="detail">
+      <section class="detail-section">
+        <h3 class="section-title">基本信息</h3>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="名称">{{ detail.name || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ detail.statusDesc || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </section>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useCouponDetail } from './hooks/useCouponDetail'
+
+const { detail, loading } = useCouponDetail()
+</script>
+```
+
+---
+
+## 分步向导
+
+```vue
+<el-steps :active="currentStep" align-center>
+  <el-step title="基础信息" />
+  <el-step title="高级配置" />
+</el-steps>
+<StepBasic v-if="currentStep === 0" v-model="form.basic" />
+<StepAdvanced v-if="currentStep === 1" v-model="form.advanced" />
+<div class="form-footer">
+  <el-button v-if="currentStep > 0" @click="handlePrev">上一步</el-button>
+  <el-button v-if="currentStep < lastStep" type="primary" @click="handleNext">下一步</el-button>
+  <el-button v-else type="primary" :loading="submitting" @click="handleSubmit">提交</el-button>
+</div>
+```
+
+- 每步独立子组件 + 本步校验
+- `useWizard.ts` 管理 `currentStep`、聚合 `form`、最终提交
+
+---
+
+## 文件上传
+
+```vue
+<el-form-item label="附件" prop="fileUrl">
+  <el-upload
+    :action="uploadAction"
+    :headers="uploadHeaders"
+    :show-file-list="true"
+    :limit="1"
+    :on-success="handleUploadSuccess"
+    :on-remove="handleUploadRemove"
+  >
+    <el-button type="primary">点击上传</el-button>
+  </el-upload>
+</el-form-item>
+```
+
+- 上传地址、鉴权 header 从 `project-conventions.md`、项目配置或 `services.ts` 获取，**禁止硬编码 token**
+- 成功回调写入 `form.fileUrl`，删除时清空
+- 多图、自定义上传、Excel 批量导入见 [高级表单控件开发指南.mdc](./高级表单控件开发指南.mdc)
+
+---
+
+## 表单交互规范
+
+| 场景 | 处理 |
+|------|------|
+| 提交中 | 按钮 `:loading="submitting"`，防重复提交 |
+| 校验失败 | Element 自动标红，不额外弹窗 |
+| 接口失败 | `ElMessage.error`，保留用户已填内容 |
+| 离开未保存 | 按需 `onBeforeRouteLeave` 确认（PRD 要求时） |
+| 空详情 | `el-empty`，不 mock |
+
+---
+
+## 禁止
+
+1. 整页表单逻辑全堆 `index.vue`（应抽 `useXxxForm`）
+2. 校验规则写死在 template
+3. 提交成功后不反馈、不跳转
+4. 详情页用可编辑控件冒充只读

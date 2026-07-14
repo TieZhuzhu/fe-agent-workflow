@@ -1,0 +1,177 @@
+---
+description: uni-app pages.json 路由注册、主包与分包、tabBar、导航传参规范。
+globs: **/*.{vue,js,ts,json}
+alwaysApply: false
+---
+
+# 路由与分包规范
+
+## 核心原则
+
+| 原则 | 说明 |
+|------|------|
+| 路由声明 | 全部在 **`pages.json`**，不使用 vue-router |
+| 主包瘦身 | **非 tabBar 页面禁止放主包 `pages`** |
+| 分包按模块 | `subPackages` 按业务域拆分：`product`、`order`、`user`、`shop`、`coupon`、`address` 等 |
+| 复用子包 | **优先放入已有子包**；单页禁止随意新建子包 |
+| 拆分时机 | 某子包页面 **≥15～20** 或体积过大时再拆分子包 |
+| path 一致 | 文件路径与 `pages.json` 注册 path **一一对应** |
+
+## 主包 vs 分包
+
+### 主包 `pages`（仅允许）
+
+- **tabBar 页面**（首页、分类、购物车、我的等）
+- **启动必要页**：闪屏、引导（若有）
+- **高频极短路径**（团队明确约定且页面极简时，须评审）
+
+### 分包 `subPackages`（默认所有业务页）
+
+- 商品详情、搜索、列表
+- 订单、退款、地址
+- 用户中心子页、设置、优惠券
+- 登录（若非 tabBar 且团队约定放分包）
+- 一切**非底部菜单**页面
+
+```
+pages/                          # 主包：tabBar + 必要启动页
+├── index/index.vue
+├── cart/cart.vue
+└── user/center.vue
+
+subPackages/                    # 分包：按功能模块
+├── product/
+│   ├── list.vue
+│   └── detail.vue
+├── order/
+│   ├── list.vue
+│   └── detail.vue
+└── user/
+    ├── settings.vue
+    └── profile.vue
+```
+
+## pages.json 注册
+
+### 主包页面
+
+```json
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "首页",
+        "navigationStyle": "custom"
+      }
+    }
+  ]
+}
+```
+
+### 分包页面
+
+```json
+{
+  "subPackages": [
+    {
+      "root": "subPackages/product",
+      "pages": [
+        {
+          "path": "detail",
+          "style": {
+            "navigationBarTitleText": "商品详情"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**完整访问路径** = `root` + `/` + `path` → `subPackages/product/detail`
+
+### 嵌套 path
+
+页面文件可为 `submit/index.vue`，注册 path 为 `submit/index`：
+
+```
+subPackages/order/submit/index.vue  →  path: "submit/index"
+```
+
+## path ↔ 目录对应（强制）
+
+| pages.json | 磁盘文件 |
+|------------|----------|
+| `pages/index/index` | `pages/index/index.vue` |
+| `subPackages/product` + `detail` | `subPackages/product/detail.vue` |
+| `subPackages/order` + `submit/index` | `subPackages/order/submit/index.vue` |
+
+**禁止** path 与文件位置不一致。
+
+## 子包模块划分参考
+
+| 模块 root | 典型页面 |
+|-----------|----------|
+| `subPackages/product` | 详情、搜索、列表、评价 |
+| `subPackages/order` | 下单、订单列表、订单详情、支付结果 |
+| `subPackages/user` | 设置、资料、收藏、足迹 |
+| `subPackages/coupon` | 领券、券详情 |
+| `subPackages/address` | 地址列表、编辑 |
+| `subPackages/refund` | 退款申请、退款详情 |
+| `subPackages/shop` | 门店、资质 |
+| `subPackages/webview` | 内嵌 H5 |
+
+新建页时：**先 Grep 是否已有对应子包**，有则直接追加 `pages` 项。
+
+## tabBar
+
+- tabBar 页面**必须**在主包 `pages` 中声明
+- `tabBar.list[].pagePath` 与主包 path 完全一致
+- 跳转 tabBar 用 `uni.switchTab`，**禁止** `navigateTo`
+- 自定义 tabBar：`"custom": true` + 项目约定组件
+
+## 导航 API
+
+| API | 用途 |
+|-----|------|
+| `uni.navigateTo` | 保留当前页，打开分包/主包非 tab 页 |
+| `uni.redirectTo` | 关闭当前页，打开新页 |
+| `uni.reLaunch` | 关闭所有页，打开新页 |
+| `uni.navigateBack` | 返回 |
+| `uni.switchTab` | 跳转 tabBar |
+
+```js
+uni.navigateTo({
+  url: '/subPackages/product/detail?id=' + encodeURIComponent(id)
+})
+```
+
+参数在目标页 `onLoad(options)` 接收；复杂对象用 `encodeURIComponent(JSON.stringify(obj))` 或 store 传递。
+
+## style 常用字段
+
+| 字段 | 说明 |
+|------|------|
+| `navigationBarTitleText` | 标题 |
+| `navigationStyle: custom` | 自定义导航栏 |
+| `enablePullDownRefresh` | 下拉刷新 |
+| `onReachBottomDistance` | 触底距离 |
+| `navigationBarTextStyle` | 标题颜色 white/black |
+
+## 新增页面检查清单
+
+1. [ ] 判定是否 tabBar：否 → **必须**走 `subPackages`
+2. [ ] 已选定**已有子包**或符合拆分条件的新子包
+3. [ ] 磁盘文件已创建，path 与 `pages.json` 一致
+4. [ ] `navigationBarTitleText` 与 PRD 一致
+5. [ ] tabBar 页未误放分包；分包页未误放主包
+6. [ ] 跳转 url 与注册 path 一致（含分包 root）
+
+## 权限说明（移动端）
+
+- 移动端通常**无**中后台式菜单树路由守卫
+- 登录拦截：在 `App.vue` onLaunch、页面 `onShow` 或 request 拦截器统一处理
+- 按钮权限：接口鉴权，前端不做 `v-if` 隐藏（与中台约定一致时）
+
+具体实现以 **`project-conventions.md`** 扫描结果为准。

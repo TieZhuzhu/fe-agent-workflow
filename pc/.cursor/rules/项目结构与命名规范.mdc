@@ -1,0 +1,337 @@
+---
+description: 项目目录结构、文件命名与就近原则（权威规范）
+globs: **/*.{vue,js,ts,jsx,tsx}
+alwaysApply: false
+---
+
+# 项目结构与命名规范
+
+## 顶层目录职责
+
+| 目录          | 用途                                                                         |
+| ------------- | ---------------------------------------------------------------------------- |
+| `assets/`     | 静态资源（图片、字体、全局样式）                                             |
+| `components/` | 跨模块复用的**公共组件**（目录 `components/<ComponentName>/index.vue`；HiTable：Vue 3 → `.cursor/components/HiTable/`，Vue 2 → `.cursor/components/HiTable-vue2/`） |
+| `hooks/`      | 跨模块复用的**公共业务方法**（Vue 3 composables / Vue 2 可复用逻辑）         |
+| `views/`      | **所有页面**，按业务模块拆分                                                 |
+| `constants/`  | 全局常量、枚举（仅跨模块共用）                                               |
+| `types/`      | 全局公共类型（TS 项目，仅跨模块共用）                                        |
+| `router/`     | 路由实例入口；各模块路由定义在模块目录内                                     |
+| `services.js` / `services.ts` | **全局公共接口**（App.vue、store、多模块共用）                     |
+
+## 就近原则
+
+| 内容                      | 存放位置                                             |
+| ------------------------- | ---------------------------------------------------- |
+| 路由                      | 当前**模块**目录下，如 `views/product/routes.ts`     |
+| 页面接口                  | 当前**页面**目录下，如 `services.ts` / `services.js` |
+| 组件独有接口              | 当前**组件**目录下，如 `components/SelectImage/services.js` |
+| 全局公共接口              | **`src/services.js`**（或 TS 项目 `src/services.ts`） |
+| constants / types / utils | 当前**页面或组件**目录下                             |
+| 模块级组件                | 当前**模块**的 `components/` 下                      |
+| 页面级组件                | 当前**页面目录**的 `components/` 下                  |
+
+**提升规则：**
+
+- **同模块多页**复用 → `views/<module>/components/`（如 product 下 tag-list、coupon-list 共用）
+- **跨模块**复用 → 顶层 `components/` 或 `hooks/`（如 product + order 共用）
+- 仅单页使用 → 留在 `views/<module>/<page>/components/`
+
+只有被 **2 个及以上不同业务模块** 复用时，才提升到全局 `components/`。同模块内复用见 `views/<module>/components/`。跨模块公共组件见 Skill `shared-component`。
+
+---
+
+## types.ts（Vue 3 TS，强制）
+
+> 细则见 **`TypeScript与types规范.mdc`**。
+
+| 文件 | 职责 |
+|------|------|
+| **`types.ts`** | 页面/模块全部 `interface` / `type`（Query、Item、Form、DTO） |
+| **`constants.ts`** | Tab、options、枚举、不变映射表 |
+| **`utils.ts`** | 展示格式化、校验；可复用 `toXxxParams`（见 `接口对接规范.mdc`）；**业务**工具函数（通用数据处理用 `lodash-es`，见 JS 指南 §数据处理） |
+| **`hooks/`** | **独立数据域**的状态与请求；`import type` from `../types` | 页面全部 logic 的「上帝 composable」 |
+| **`index.vue`** | 布局、筛选/列表主流程（标准列表页）、hook 组合 | 大段 interface、无意义纯解构壳 |
+
+**hooks 拆分边界（见 `Vue代码生成指南.mdc` §hooks 拆分边界）：** 标准列表页主逻辑保留在 `index.vue`；不为「有 hooks 目录」而整页下沉。
+
+**接口位置：** 页面 → `services.ts` / `services.js`；组件独有 → `components/<Name>/services.*`；**App.vue / store / 多模块共用** → **`src/services.js`**（见下文 §接口定义）。以同模块已有页面为准，勿擅自换路径或层级。
+
+---
+
+## components 目录结构（跨模块公共组件）
+
+顶层 `components/` 下每个组件为**独立目录**，入口统一 `index.vue`；组件私有的 `services`、`constants`、`types`、`utils` 等与入口**同级**放在同一目录内：
+
+```
+components/
+├── HiTable/
+│   ├── index.vue
+│   └── utils/
+│       └── parseResponse.js
+├── CategoryCascader/
+│   ├── index.vue
+│   └── services.js
+├── SelectImage/
+│   ├── index.vue
+│   ├── services.js
+│   └── constants.js          # 可选
+└── UploaderByOssObs/
+    ├── index.vue
+    └── services.js
+```
+
+- **禁止** `components/Foo.vue` 单文件平铺（历史遗留须迁为 `Foo/index.vue`）
+- 引用：`import CategoryCascader from '@/components/CategoryCascader'`（目录即组件，**不写** `/index.vue` 后缀）
+- 组件内引用同目录文件：`import { GetXxx } from './services'`
+- **禁止** `components/services.js` 集中堆放各组件 API；各组件接口下沉到对应目录
+
+**页面级 / 模块级 `components/` 与顶层公共组件同构：** 子组件也必须是 `<ComponentName>/index.vue` 目录，**禁止** `components/Foo.vue` 平铺（与顶层 `src/components/` 规则一致）。组件私有的 `services.js`、`constants.js`、`utils.js` 等与 `index.vue` **同级**。
+
+```
+views/setting/store-settings/components/
+├── LicenseSection/
+│   └── index.vue
+├── StoreImageField/
+│   └── index.vue
+└── HistoryQualDialog/
+    └── index.vue
+```
+
+- 页面引用：`import LicenseSection from './components/LicenseSection'`（不写 `/index.vue`）
+- 子组件互相引用：`import StoreImageField from '../StoreImageField'`
+
+---
+
+## constants 与 utils 分离（强制）
+
+页面目录下 **`constants.js`** 与 **`utils.js`** 职责分离，**禁止**在同一文件混放：
+
+| 文件 | 只放 | 示例 |
+|------|------|------|
+| **`constants.js`** | 枚举、Tab 定义、静态 options、不变映射表 | `REFUND_STATUS`、`MODULE_TABS` |
+| **`utils.js`** | 展示格式化、校验、纯函数工具、`toXxxParams` | `refundStatusClass`、`formatSlotDesc` |
+
+- 模块内多页共用：可放 `views/<module>/constants.js` + `views/<module>/utils/<topic>.js`，但 **constants 文件内不得 export 函数**（工厂函数如 `createEmptyQueryForm` 属 utils）
+- **禁止** `constants/foo.js` 内同时 export 常量与 `refundStatusClass` 类函数 — 函数须迁 `utils/`
+- Vue 3 TS 项目：`constants.ts` / `utils.ts`，类型只在 `types.ts`（见 `TypeScript与types规范.mdc`）
+
+---
+
+## views 目录结构
+
+页面统一放 `views/`，按 **模块目录 → 页面目录 → 页面相关文件** 组织：
+
+```
+views/
+└── product/                              # 业务模块
+    ├── routes.ts                         # 模块路由（就近定义）
+    ├── Detail.vue                        # 模块级单页，命名精简不带父级前缀
+    ├── components/                       # 模块内共用组件
+    │   ├── CategoryPicker/
+    │   │   └── index.vue
+    │   └── index.ts                      # 统一导出
+    └── batch-off-shelf/                  # 页面目录，kebab-case 中划线
+        ├── index.vue                     # 页面入口
+        ├── services.ts                   # 本页接口
+        ├── constants.ts                  # 本页常量
+        ├── types.ts                      # 本页类型（TS 项目）
+        ├── utils.ts                      # 本页工具
+        ├── hooks/                        # 本页独有 hooks（Vue 3）
+        │   └── useBatchList.ts
+        └── components/                   # 本页独有子组件
+            ├── MoveProduct/
+            │   ├── index.vue             # 组件入口
+            │   ├── constants.ts          # 组件独有常量
+            │   ├── services.ts           # 组件独有接口
+            │   ├── types.ts              # 组件独有类型
+            │   └── utils.ts              # 组件独有工具
+            ├── FilterForm/
+            │   └── index.vue
+            └── index.ts                  # 子组件统一导出
+```
+
+### 结构说明
+
+- **模块目录**：业务域，与路由第一段一致，如 `product` → path `/product/...`
+- **页面目录**：kebab-case，与路由后续段一致，如 `tag-list` → path `/product/tag-list` → `views/product/tag-list/`
+- **path ↔ 目录**：新建页时**先定 path，再按 path 建目录**；二者禁止脱节（详见 `路由与权限规范.mdc`）
+- **模块级单页**：文件直接放模块下，如 `product/Detail.vue`（不写 `ProductDetail.vue`）
+- **组件目录**：大驼峰 + `index.vue`，如 `MoveProduct/index.vue`（**页面 `components/` 与顶层 `components/` 同规则，禁止 `Foo.vue` 平铺**）
+- **页面 constants / utils**：页面根目录 `constants.js` + `utils.js`（或 `utils/` 按主题拆分）；**禁止 constants 与 utils 混放同一文件**
+- **模块 components/**：当前模块多页面共用的组件
+- **页面 components/**：仅当前页面使用的子组件
+
+---
+
+## 文件命名
+
+| 类型             | 规范               | 示例                                          |
+| ---------------- | ------------------ | --------------------------------------------- |
+| Vue 组件目录     | 大驼峰 PascalCase  | `MoveProduct/`、`InputNumber/`                |
+| Vue 组件入口     | `index.vue`        | `MoveProduct/index.vue`                       |
+| 页面目录         | kebab-case 中划线  | `batch-off-shelf/`                            |
+| 模块内页面文件   | 精简，不带父级前缀 | `product/Detail.vue`、`product/List.vue`      |
+| 非 Vue 文件      | 小驼峰 camelCase   | `designConfig.ts`、`routes.ts`、`services.ts` |
+| Service 导出函数 | 大驼峰 PascalCase  | `GetBatchList`、`SaveMoveProduct`             |
+| hooks 文件       | 小驼峰，use 前缀   | `useBatchList.ts`、`useCouponForm.ts`         |
+
+---
+
+## 组件导出
+
+### 页面/模块 components/index.ts
+
+```js
+export { default as MoveProduct } from './MoveProduct/index.vue'
+export { default as FilterForm } from './FilterForm/index.vue'
+```
+
+### 页面内引用
+
+```js
+import { MoveProduct, FilterForm } from './components'
+```
+
+---
+
+## 路由定义
+
+路由 `path` 由前端定义，**必须与页面目录对应**，必须添加 `webpackChunkName`：
+
+| 路由 path | 页面位置 |
+|-----------|----------|
+| `/product/tag-list` | `views/product/tag-list/index.vue` |
+| `/product/batch-off-shelf` | `views/product/batch-off-shelf/index.vue` |
+| `/product/detail/:id` | `views/product/Detail.vue`（模块级单页例外） |
+
+路由定义在**模块目录**下，主路由文件合并：
+
+```ts
+// views/product/routes.ts
+export default [
+  {
+    path: '/product/tag-list',
+    name: 'productTagList',
+    component: () => import(/* webpackChunkName: "productTagList" */ './tag-list/index.vue'),
+    meta: { title: '商品标签' },
+  },
+  {
+    path: '/product/batch-off-shelf',
+    name: 'productBatchOffShelf',
+    component: () => import(/* webpackChunkName: "productBatchOffShelf" */ './batch-off-shelf/index.vue'),
+    meta: { title: '批量下架' },
+  },
+  {
+    path: '/product/detail',
+    name: 'productDetail',
+    component: () => import(/* webpackChunkName: "productDetail" */ './detail/index.vue'),
+    meta: {
+      title: '商品详情',
+    }
+  }
+]
+```
+
+```ts
+// router/index.ts
+import productRoutes from '@/views/product/routes'
+
+export const routes = [...productRoutes]
+```
+
+详见 `路由与权限规范.mdc`。
+
+---
+
+## 接口定义
+
+接口按**作用域**分层存放；`request` 路径先读项目已有 services，无参照用 `@/config/request`。
+
+**入参 / 出参 / 字段绑定：** 见 **`接口对接规范.mdc`**（权威）；本节仅约定文件位置与导出风格。
+
+| 作用域 | 文件位置 | 典型场景 |
+|--------|----------|----------|
+| 页面 | `views/<module>/<page>/services.js` | 列表、详情、本页提交（**默认放这里**） |
+| 组件 | `components/<Name>/services.js` | 上传签名、图库、分类树等组件独有 API |
+| **全局** | **`src/services.js`** | `App.vue` 角标、store 菜单权限、**多业务模块**共用 |
+| 模块根（慎用） | `views/<module>/services.js` | **仅当 ≥2 个页面真实共用**且不宜重复定义；**禁止**把单页接口堆到模块根 |
+
+**禁止** 在 `views/<module>/services.js` 集中堆放仅单页使用的接口（历史 `trade/services.js` 式写法须拆回各页 `services.js`）。两页共用少量接口时，优先各页 `services.js` 各写一份；确需单点维护再保留模块级文件并加注释说明共用范围。
+
+**禁止** 在 `store/services.js`、`components/services.js` 等路径集中定义接口（历史路径须迁移）。
+
+**Vue 3（默认）：**
+
+```ts
+// src/services.ts — App / store / 多模块共用
+import request from '@/config/request'
+
+export const GetUsableMenus = () => request({ url: '...', loading: false })
+```
+
+```ts
+// views/product/batch-off-shelf/services.ts — 页面级
+import request from '@/config/request'
+
+/** 批量下架列表 */
+export const GetBatchList = (data: Record<string, unknown>) => request({ url: 'Product/batchList', data, method: 'post' })
+```
+
+```js
+// components/UploaderByOssObs/services.js — 组件级
+import request from '@/config/request'
+
+export const GetUploadSign = (data) => request({ url: 'histore-gw/storage/sign', data, method: 'post' })
+```
+
+**Vue 2：**
+
+```js
+// src/services.js
+import request from '@/config/request'
+
+export const GetUsableMenus = () => request({ url: '...', loading: false })
+```
+
+```js
+// views/product/batch-off-shelf/services.js
+import request from '@/config/request'
+
+/** 批量下架列表 */
+export const GetBatchList = (data) => request({ url: 'Product/batchList', data, method: 'post' })
+
+/** 执行下架 */
+export const SaveBatchOffShelf = (data) => request({ url: 'Product/batchOffShelf', data, method: 'post' })
+```
+
+```js
+// views/product/batch-off-shelf/index.vue
+import { GetBatchList, SaveBatchOffShelf } from './services'
+
+// App.vue / store
+import { GetUsableMenus, QueryUnreadCount } from '@/services'
+```
+
+---
+
+## Vue 2 / Vue 3 共用结构
+
+无论 Vue 2 还是 Vue 3，**目录结构相同**，差异仅在写法：
+
+| 项       | Vue 2（检测到 2.x）        | Vue 3（**默认**）                         |
+| -------- | -------------------------- | ----------------------------------------- |
+| 页面入口 | `index.vue`（Options API） | `index.vue`（`<script setup lang="ts">`） |
+| 复用逻辑 | `mixins/` 或 `methods`     | **`hooks/useXxx.ts`**                     |
+| 接口文件 | **`services.js`**          | **`services.ts`**                         |
+| 路由文件 | **`routes.js`**            | **`routes.ts`**                           |
+| 类型文件 | 可选 `types.js`            | **`types.ts`**                            |
+| 组件导出 | `components/index.js`      | `components/index.ts`                     |
+
+**生成前读取 `package.json` 判定版本**；未检测到 Vue 2 时一律按 Vue 3 列生成。
+
+---
+
+## 单文件行数
+
+- 单文件建议不超过 **800 行**；职责混杂、可独立复用时拆分到 `components/` 或 `hooks/`，**合理拆分即可，非强制卡点**

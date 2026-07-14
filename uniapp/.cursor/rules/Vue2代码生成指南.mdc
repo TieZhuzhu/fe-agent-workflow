@@ -1,0 +1,156 @@
+---
+description: Vue 2 + uni-app 页面代码生成。Options API、Vuex、mixins，禁止 script setup。
+globs: **/*.{vue,js}
+alwaysApply: false
+---
+
+# Vue 2 代码生成指南（uni-app）
+
+> 须配合 **`uniapp代码生成指南.mdc`** 使用。检测到 `vue@^2.x` 时**全文**按本指南生成。
+
+## 适用判定
+
+`package.json` 中 `vue` 为 `^2.x` 时启用。
+
+**禁止**：`<script setup>`、Composition API、`import { ref } from 'vue'`、Pinia。
+
+## 页面模板
+
+```vue
+<template>
+  <view class="page">
+    <view v-for="item in list" :key="item.id">{{ item.name }}</view>
+  </view>
+</template>
+
+<script>
+import { GetList } from './services' // 默认页面级；存量集中式见 project-conventions.md
+
+export default {
+  data() {
+    return {
+      list: [],
+      loading: false,
+      query: {
+        pageNo: 1,
+        pageSize: 20
+      }
+    }
+  },
+  onLoad(options) {
+    if (options.id) {
+      this.id = options.id
+    }
+    this.loadList()
+  },
+  onPullDownRefresh() {
+    this.loadList().finally(() => uni.stopPullDownRefresh())
+  },
+  onReachBottom() {
+    this.loadMore()
+  },
+  methods: {
+    async loadList() {
+      this.loading = true
+      try {
+        const res = await GetList(this.query)
+        this.list = res.data
+      } finally {
+        this.loading = false
+      }
+    },
+    handleSearch() {
+      this.query.pageNo = 1
+      this.loadList()
+    }
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+.page {
+  min-height: 100vh;
+}
+</style>
+```
+
+## 方法命名
+
+| 前缀 | 用途 |
+|------|------|
+| `handle` | 用户点击、输入交互 |
+| `load` | 接口请求 |
+| `on` | 作为回调传入时使用（少用，uni 生命周期用官方名） |
+
+## 状态管理
+
+```js
+import { mapState, mapActions } from 'vuex'
+
+export default {
+  computed: {
+    ...mapState(['userInfo', 'token'])
+  },
+  methods: {
+    ...mapActions(['getUserInfo'])
+  }
+}
+```
+
+## mixins
+
+跨页复用逻辑可用 `mixins/`，或提升为 `common/` 工具函数：
+
+```
+subPackages/order/mixins/
+└── orderMixin.js
+```
+
+单页逻辑优先放 `methods`，避免过度 mixin。
+
+## 接口文件
+
+```js
+// services.js
+import request from '@/common/request'
+
+export const GetList = (data) =>
+  request({ url: 'list', data, method: 'post' })
+```
+
+- 箭头函数导出
+- import request 路径以项目 / conventions 为准
+
+## 类型
+
+Vue 2 项目通常用 JavaScript + JSDoc：
+
+```js
+/**
+ * @typedef {Object} OrderItem
+ * @property {string} id
+ * @property {string} orderNo
+ */
+```
+
+或使用 `types.js` 导出常量形状说明。
+
+## uview-ui（Vue 2）
+
+```vue
+<u-button type="primary" @click="handleSubmit">提交</u-button>
+```
+
+easycom 自动引入，无需手动 import（以 `pages.json` easycom 配置为准）。
+
+## 与 Vue 3 项目共存于 monorepo 时
+
+**按当前子项目 `package.json` 判定**，不得混用写法。
+
+## 检查清单
+
+- [ ] Options API，`export default { data, methods }`
+- [ ] 无 script setup / ref / reactive
+- [ ] `services.js` 箭头函数
+- [ ] onLoad / onShow 等 uni 生命周期与 methods 同级
+- [ ] 原生组件优先

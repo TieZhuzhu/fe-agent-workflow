@@ -1,0 +1,18 @@
+# Feature 状态 — 由 feature-check sync-status 维护
+slug: project-refactor
+status: draft
+
+owner: ""
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+
+blockers: []
+
+verify:
+  l1: pending
+  l2: skip
+  l3: skip
+
+links:
+  pr: ""
+  ticket: ""

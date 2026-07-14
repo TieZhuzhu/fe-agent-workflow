@@ -1,0 +1,171 @@
+---
+description: Vue 3 页面 types.ts 就近原则与类型职责。优化、重构、联调、新建页面时强制遵循。
+globs: **/*.{vue,ts}
+alwaysApply: false
+---
+
+# TypeScript 与 types 规范
+
+> **权威补充：** 页面级类型就近放页面目录 `types.ts`；跨模块类型放项目根 `types/` 或 `common/`（按项目惯例）。
+>
+> **适用：** 新建页、增量加字段、**按规范优化/重构**、接口联调。凡改动涉及类型，须 Read 本节。
+>
+> **勿模仿不符合规范的现有代码：** 不以项目中混放 options 与工具函数的 `config.ts` 等为模板；写码以本节 + `项目结构与命名规范.mdc` 为准。
+
+---
+
+## 文件职责（页面目录内）
+
+| 文件 | 放什么 | 禁止放什么 |
+|------|--------|------------|
+| **`types.ts`** | `interface` / `type`：Query、Item、Form、DTO、API 响应实体、Props/Emit 复杂类型 | 运行时逻辑、API 调用、常量数组、工具函数 |
+| **`constants.ts`** | Tab、options、状态码、不变映射表 | 类型定义、请求逻辑 |
+| **`utils.ts`** | `formatMoney` 等展示格式化、**业务语义**工具；文档要求的 `toXxxParams`（见 `接口对接规范.mdc`） | 类型定义、API 调用、`normalizeRows` 猜字段、**lodash-es 已有能力的自写函数** |
+| **`hooks/useXxx.ts`** | 状态、请求、事件方法；`import type` from `../types` | 导出页面级 `interface`、大量 `any` |
+| **`index.vue`** | 布局组装；**标准列表页**保留 query/loadList/handlers | 大段 interface、上帝 hook 纯解构壳 |
+| **`services.ts`** | 本页接口封装 | 类型定义（类型放 `types.ts`） |
+
+**接口调用：** 默认页面目录 **`services.ts`**；`request` import 先读同模块已有 services，无参照用 `@/config/request`（若存在 `project-conventions.md` 则以扫描结果为准）。
+
+---
+
+## 必须写入 `types.ts` 的类型
+
+满足**任一**即须放页面（或模块）目录的 `types.ts`，**禁止**留在 hook / vue / constants / utils 内：
+
+1. **查询/筛选参数**：`XxxQuery`、`XxxListParams`
+2. **列表行/详情实体**：`XxxItem`、`XxxDetail`
+3. **表单提交 DTO**：`XxxForm`、`SaveXxxPayload`
+4. **被 2+ 文件引用**的类型（hook + component + utils）
+5. **替代 `any[]` / `ref<any[]>`** 的列表项、facets、分页结果
+6. **子组件 Props** 较复杂或跨文件复用时
+
+### 命名约定
+
+| 用途 | 命名 |
+|------|------|
+| 列表查询 | `ProductQuery`、`OrderListParams` |
+| 列表行 | `ProductItem`、`OrderRow` |
+| 详情 | `ProductDetail` |
+| 表单 | `CouponForm` |
+| 分页包装 | `PageResult<T>`（页面 `types.ts` 或全局 `src/types/`） |
+
+---
+
+## 允许留在单文件内的类型
+
+- 组件**私有**、仅当前 `index.vue` 使用且不导出的 Props（`defineProps<{ visible: boolean }>()`）
+- hook **内部**、不导出且仅单函数使用的辅助类型
+
+---
+
+## 禁止（优化/重构时重点查）
+
+| 禁止 | 应改为 |
+|------|--------|
+| `hooks/useXxx.ts` 内 `export interface ProductQuery` | 迁到 `types.ts` 再 import |
+| `constants.ts` / `utils.ts` 内 `interface` / `type` | 迁到 `types.ts` |
+| `ref<any[]>([])`、`reactive<any>({})` 用于业务列表 | 定义 `XxxItem` / `XxxFacets` |
+| `function editProduct(row: any)` | `row: ProductItem` |
+| 在 `index.vue` 写 10+ 行 interface | 迁 `types.ts` |
+| 全局 `src/types/` 放**仅单页**使用的类型 | 页面 `types.ts` 就近原则 |
+
+`any` 仅允许临时过渡，**须** `// TODO: 补 XxxItem 类型`；**规范优化任务须消除可推断的 any**。
+
+---
+
+## 优化 / 重构时的强制步骤
+
+用户说「按规范优化」「整理代码」「规范化」时，**除业务逻辑外必须完成类型整理**：
+
+```
+① Read 页面目录 index.vue、hooks/、types.ts、constants.ts、utils.ts
+② 列出所有 interface/type/any 位置
+③ 应迁未迁的 → 写入/合并 types.ts
+④ hooks/components/utils 改为 import type from '../types'
+⑤ 若存在遗留 config.ts：options → constants，工具函数 → utils（不新建 config）
+⑥ 交付附「类型迁移表」
+```
+
+**类型迁移表示例：**
+
+| 原位置 | 类型名 | 目标 |
+|--------|--------|------|
+| useProductList.ts | ProductQuery | 已在 types.ts ✓ |
+| useProductList.ts | products: any[] | 新增 ProductItem → types.ts |
+
+---
+
+## 与全局 `src/types/` 的边界
+
+| 范围 | 位置 |
+|------|------|
+| 仅当前页面/模块 | `subPackages/<module>/<page>/types.ts` 或同目录 |
+| 2+ 模块共用 | 项目根 `types/` 或 `common/` |
+
+---
+
+## 示例（列表页 types.ts）
+
+```ts
+// subPackages/product/list/types.ts
+export interface ProductQuery {
+  pageNo: number
+  pageSize: number
+  keyword: string
+  categoryId?: number
+  brandId?: number
+  saleStatus?: number
+  tag?: string
+}
+
+export interface ProductItem {
+  productId: number
+  productName: string
+  productCode?: string
+  categoryName?: string
+  brandName?: string
+  imageUrl?: string
+  saleStatus?: number
+}
+
+export interface ProductFacets {
+  categories: Array<{ id: number; name: string }>
+  brands: Array<{ id: number; name: string }>
+  tags: string[]
+}
+```
+
+```ts
+// hooks/useProductList.ts
+import type { ProductQuery, ProductItem, ProductFacets } from '../types'
+
+const products = ref<ProductItem[]>([])
+const facets = reactive<ProductFacets>({ categories: [], brands: [], tags: [] })
+```
+
+```ts
+// constants.ts — 选项、Tab
+export const productStatusOptions = [
+  { label: '全部', value: undefined },
+  { label: '上架在售', value: 1 }
+]
+
+// utils.ts — 展示格式化（入参/出参见 接口对接规范.mdc）
+import type { ProductQuery } from './types'
+
+export function formatProductPrice(value: unknown) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric.toFixed(2) : '0.00'
+}
+```
+
+---
+
+## 验收（阻塞项）
+
+- [ ] 页面 Query / Item / Form 类型在 `types.ts`（或模块 types.ts）
+- [ ] hook 无 `export interface` 页面级类型
+- [ ] `constants.ts` / `utils.ts` 无 type/interface 定义
+- [ ] 列表无裸 `any[]`（除非 TODO 标注）
+- [ ] 多文件共用类型只定义一次

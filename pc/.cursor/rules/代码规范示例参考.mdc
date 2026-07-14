@@ -1,0 +1,427 @@
+---
+description: 代码规范示例参考。**仅查阅，非预加载** — 不确定具体写法时按需 Read，禁止列入 rules-activation 预加载计划。
+globs: **/*.{vue,ts,js}
+alwaysApply: false
+---
+
+# 代码规范示例参考
+
+> **⚠️ 仅查阅，非预加载。** 本文件约 400+ 行，**不要**在写码前默认 Read。仅在 Agent 对目录结构或写法不确定时，按需查阅对应章节。
+>
+> 预加载清单以 [shared/rules-activation.md](../skills/shared/rules-activation.md) 为准。
+
+本文件提供目录结构与代码写法的示例，供生成代码时参照。
+
+**默认按 Vue 3 + `<script setup lang="ts">` + hooks + Element Plus 生成。**
+
+检测到 `package.json` 中 `vue@2.x` 时，改用 Options API + `services.js`，示例见 §Vue 2。
+
+---
+
+## 1. Vue 3 列表页 — batch-off-shelf/index.vue
+
+```vue
+<template>
+  <div>
+    <el-form inline :model="form" class="filter" size="small" label-width="100px">
+      <el-form-item label="名称：">
+        <el-input v-model="form.name" placeholder="请输入" />
+      </el-form-item>
+      <el-form-item class="filter-actions">
+        <el-button type="primary" class="button-small" @click="handleSearch">筛选</el-button>
+        <el-button type="primary" link class="button-reset" @click="handleClear">重置</el-button>
+      </el-form-item>
+    </el-form>
+    <HiTable ref="tableRef" url="Product/batchList" :params="form">
+      <template #toolbar>
+        <el-button size="small" type="primary">批量操作</el-button>
+      </template>
+      <el-table-column type="selection" width="48" />
+      <el-table-column label="名称" prop="name" min-width="100" />
+      <el-table-column label="操作" width="120" fixed="right">
+        <template #default="{ row }">
+          <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
+        </template>
+      </el-table-column>
+    </HiTable>
+    <MoveProduct v-model="moveVisible" @success="handleSearch" />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { reactive, ref } from 'vue'
+import HiTable from '@/components/HiTable/index.vue'
+import { MoveProduct } from './components'
+
+const tableRef = ref<InstanceType<typeof HiTable>>()
+const form = reactive({ name: '' })
+const moveVisible = ref(false)
+
+const handleSearch = () => {
+  tableRef.value?.reload()
+}
+
+const handleClear = () => {
+  form.name = ''
+  handleSearch()
+}
+
+const handleEdit = (row: Record<string, unknown>) => {
+  // ...
+}
+</script>
+
+<style lang="scss" scoped>
+@import '@/styles/tablePage.scss';
+</style>
+```
+
+---
+
+## 2. Vue 3 弹窗 — MoveProduct/index.vue
+
+```vue
+<template>
+  <el-dialog v-model="visible" title="移动商品" width="750px">
+    <el-form ref="formRef" size="small" :model="form" label-width="100px">
+      <el-form-item label="目标分类：" prop="categoryId">
+        <CategoryPicker v-model="form.categoryId" placeholder="请选择" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button size="small" @click="visible = false">取消</el-button>
+      <el-button size="small" type="primary" @click="handleSave">确定</el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import type { FormInstance } from 'element-plus'
+import { SaveMoveProduct } from '../../services'
+
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{ 'update:modelValue': [boolean]; success: [] }>()
+
+const visible = ref(props.modelValue)
+const formRef = ref<FormInstance>()
+const form = ref({ categoryId: '' })
+
+watch(
+  () => props.modelValue,
+  (v) => {
+    visible.value = v
+  }
+)
+watch(visible, (v) => {
+  emit('update:modelValue', v)
+})
+
+const handleSave = async () => {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+  await SaveMoveProduct(form.value)
+  emit('success')
+  visible.value = false
+}
+</script>
+```
+
+---
+
+## 3. 目录结构总览
+
+```
+views/
+└── product/
+    ├── routes.ts
+    ├── components/
+    │   ├── CategoryPicker/index.vue
+    │   └── index.ts
+    └── batch-off-shelf/
+        ├── index.vue
+        ├── services.ts
+        ├── constants.ts
+        └── components/
+            ├── MoveProduct/
+            │   ├── index.vue
+            │   └── constants.ts
+            └── index.ts
+```
+
+---
+
+## 2. Vue 2 遗留示例 — 页面入口 batch-off-shelf/index.vue
+
+**要点**：页面目录 kebab-case、接口就近 `./services`、子组件从 `./components` 导入。
+
+```vue
+<template>
+  <div>
+    <el-form inline :model="form" class="filter" size="small" label-width="100px">
+      <form-item label="名称：">
+        <el-input v-model="form.name" v-trim placeholder="请输入" />
+      </form-item>
+      <form-item class="filter-actions">
+        <el-button type="primary" class="button-small" @click="handleSearch">筛选</el-button>
+        <el-button type="text" class="button-reset" @click="handleClear">重置筛选条件</el-button>
+      </form-item>
+    </el-form>
+    <HiTable ref="tableRef" url="Product/batchList" :params="form" @load="handleLoad">
+      <template slot="toolbar">
+        <el-button size="small" type="primary">批量操作</el-button>
+      </template>
+      <el-table-column type="selection" width="48" />
+      <el-table-column label="名称" prop="name" min-width="100" />
+      <el-table-column label="操作" width="120" fixed="right">
+        <template slot-scope="scope">
+          <el-button type="text" @click="handleEdit(scope.row)">编辑</el-button>
+        </template>
+      </el-table-column>
+    </HiTable>
+    <MoveProduct :visible.sync="moveVisible" @success="handleSearch" />
+  </div>
+</template>
+
+<script>
+import HiTable from '@/components/HiTable/index.vue'
+import { MoveProduct } from './components'
+
+export default {
+  components: { HiTable, MoveProduct },
+  data() {
+    return {
+      form: { name: '' },
+      moveVisible: false
+    }
+  },
+  methods: {
+    handleSearch() {
+      this.$refs.tableRef.reload()
+    },
+    handleClear() {
+      this.form = { name: '' }
+      this.handleSearch()
+    }
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+@import '~styles/tablePage.scss';
+</style>
+```
+
+---
+
+## 3. 子组件 — MoveProduct/index.vue
+
+**要点**：大驼峰目录、`index.vue` 入口、组件独有常量放同目录。
+
+```
+components/MoveProduct/
+├── index.vue
+└── constants.ts    # 仅 MoveProduct 使用的常量
+```
+
+```vue
+<template>
+  <el-dialog title="移动商品" width="750px" :visible.sync="display">
+    <el-form size="small" :model="form" label-width="100px" ref="dialogForm">
+      <form-item label="目标分类：" prop="categoryId">
+        <category v-model="form.categoryId" placeholder="请选择" />
+        <div class="form-tip">移动后商品将归属新分类</div>
+      </form-item>
+    </el-form>
+    <div slot="footer" class="dialog-footer">
+      <el-button size="small" @click="display = false">取 消</el-button>
+      <el-button size="small" type="primary" @click="handleSave">确 定</el-button>
+    </div>
+  </el-dialog>
+</template>
+
+<script>
+import { SaveMoveProduct } from '../../services'
+import { MOVE_TYPE } from './constants'
+
+export default {
+  props: {
+    visible: { type: Boolean, default: false }
+  },
+  data() {
+    return { form: { categoryId: '' } }
+  },
+  computed: {
+    display: {
+      get() {
+        return this.visible
+      },
+      set(val) {
+        this.$emit('update:visible', val)
+      }
+    }
+  },
+  methods: {
+    handleSave() {
+      this.$refs.dialogForm.validate((valid) => {
+        if (!valid) return
+        SaveMoveProduct({ ...this.form, type: MOVE_TYPE.MOVE }).then(() => {
+          this.$emit('success')
+          this.display = false
+        })
+      })
+    }
+  }
+}
+</script>
+```
+
+---
+
+## 4. components/index.ts 统一导出
+
+```js
+export { default as MoveProduct } from './MoveProduct/index.vue'
+export { default as FilterForm } from './FilterForm/index.vue'
+```
+
+---
+
+## 5. 页面接口 — services.ts（Vue 3）
+
+**要点**：接口放页面目录，`export const` + 箭头函数，函数名大驼峰，JSDoc 注释。Vue 2 / Vue 3 写法相同，差异仅在 `.js` / `.ts` 与类型注解。
+
+```ts
+import request from '@/config/request'
+
+/** 批量下架列表 */
+export const GetBatchList = (data: Record<string, unknown>) =>
+  request({ url: 'Product/batchList', data, method: 'post' })
+
+/** 移动商品 */
+export const SaveMoveProduct = (data: Record<string, unknown>) =>
+  request({ url: 'Product/move', data, method: 'post' })
+```
+
+---
+
+## 6. 模块路由 — product/routes.ts
+
+**要点**：路由就近模块目录，模块内单页精简命名 `Detail.vue`。
+
+```js
+export default [
+  {
+    path: '/product/batch-off-shelf',
+    name: 'productBatchOffShelf',
+    component: () => import(/* webpackChunkName: "productBatchOffShelf" */ './batch-off-shelf/index.vue'),
+    meta: { title: '批量下架' }
+  },
+  {
+    path: '/product/detail',
+    name: 'productDetail',
+    component: () => import(/* webpackChunkName: "productDetail" */ './detail/index.vue'),
+    meta: { title: '商品详情' }
+  }
+]
+```
+
+```js
+// router/index.ts
+import productRoutes from '@/views/product/routes'
+
+const routes = [...productRoutes]
+```
+
+---
+
+## 7. 公共组件 — components/InputNumber/index.vue
+
+**要点**：跨模块复用放 `components/`，props 精简命名，交互方法以 `handle` 开头。
+
+```vue
+<script>
+import LibrarySelector from '@/components/LibrarySelector'
+
+export default {
+  components: { LibrarySelector },
+  props: {
+    value: { type: Number, default: 0 },
+    min: { type: Number, default: 0 },
+    max: { type: Number, default: 999999 }
+  },
+  methods: {
+    handleChange(val) {
+      this.$emit('input', val)
+    }
+  }
+}
+</script>
+```
+
+---
+
+## 8. 公共 hooks — hooks/usePermission.ts
+
+**要点**：跨模块复用的业务逻辑放 `hooks/`。
+
+```js
+import { ref } from 'vue'
+
+export const usePermission = () => {
+  const permissions = ref([])
+
+  const loadPermissions = () => {
+    // ...
+  }
+
+  return { permissions, loadPermissions }
+}
+```
+
+---
+
+## 9. HiTable 列表示例
+
+| Vue 版本 | 组件源码 | 页面示例 |
+|----------|----------|----------|
+| Vue 3 | `.cursor/components/HiTable/` | `examples/MemberList.vue` |
+| Vue 2 | `.cursor/components/HiTable-vue2/` | `examples/MemberList.vue` |
+
+```vue
+<!-- Vue 3 -->
+<HiTable ref="tableRef" url="member/List" :params="form" @load="handleLoad">
+  <el-table-column label="昵称" prop="nickname" min-width="120" />
+</HiTable>
+
+<!-- Vue 2：插槽语法不同，Props/方法相同 -->
+<HiTable ref="tableRef" url="member/List" :params="form" @load="handleLoad">
+  <el-table-column label="昵称" prop="nickname" min-width="120" />
+</HiTable>
+```
+
+```js
+// Vue 3
+tableRef.value?.reload()
+
+// Vue 2
+this.$refs.tableRef.reload()
+```
+
+---
+
+## Vue 2 遗留项目
+
+- 列表页复制 `.cursor/components/HiTable-vue2/` → `components/HiTable/`
+- 弹窗用 `:visible.sync`，插槽用 `slot-scope`
+- 接口文件 `services.ts`，路由 `routes.ts`
+- 完整模板见上文 §Vue 2 遗留示例
+
+---
+
+## 10. 样式引入
+
+```scss
+@import '@/styles/tablePage.scss'; // 列表页
+@import '@/styles/formPage.scss'; // 表单页
+```

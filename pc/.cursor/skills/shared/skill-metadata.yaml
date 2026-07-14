@@ -1,0 +1,358 @@
+# Skill 元数据 — skill-standardize.py 数据源
+# description: 第三人称，能力 + 触发场景 + 关键词
+# risk: 严 | 中 | 松
+# boundaries: Skill 特有边界（追加到基线）
+# delivery: 交付检查要点
+
+feature-dev-workflow:
+  risk: 中
+  description: >-
+    Vue 功能从零开发主工作流（Vue 3 默认）。串联需求理解、方案对齐、写码与验收。
+    用户说【新建】、按 PRD/Figma/原型开发新页面时触发；已有页增量见 incremental-feature。
+  boundaries: |
+    - ✅ 按 SDD 链路 spec → analyze → implement → verify
+    - ⚠️ 需求复杂度高时先 spec-research-clarify
+    - 🚫 跳过 spec/analyze 直接写大功能（除非用户明确只要原型）
+  delivery: |
+    - [ ] 规范预加载已汇报
+    - [ ] 衔接 feature-verify 或说明 skip 原因
+
+feature-spec:
+  risk: 严
+  description: >-
+    产出 SDD 提案工件（proposal、spec、design、tasks、field-map）。
+    用户说【spec】、propose、先出方案再编码时触发；复杂新建须在 feature-dev-workflow 之前执行。
+  boundaries: |
+    - ✅ 创建/更新 docs/features/<slug>/ 工件
+    - ⚠️ blocker 未澄清不得标 ready
+    - 🚫 在 spec 中编造未确认的接口字段
+  delivery: |
+    - [ ] 运行 feature-check spec <slug>
+    - [ ] 复杂需求已产出 clarify-log / research
+
+feature-analyze:
+  risk: 严
+  description: >-
+    对照 spec/design/tasks/field-map/e2e 做 implement 前一致性分析；CRITICAL>0 禁止标记 ready。
+    用户说【analyze】、spec 评审、ready 前触发。CLI：feature-check analyze。
+  boundaries: |
+    - ✅ 只读分析，输出 CRITICAL/WARNING 清单
+    - 🚫 CRITICAL>0 时声称可开始写码
+  delivery: |
+    - [ ] 运行 feature-check analyze <slug> 并汇报结果
+
+feature-finish:
+  risk: 松
+  description: >-
+    verify PASS 后产出 PR 描述、自检清单与 archive 提示。
+    用户说【finish】、验收通过准备合码时触发；须在 feature-verify PASS 后执行。
+  boundaries: |
+    - ✅ 产出 PR body、合码检查清单
+    - 🚫 verify 未 PASS 时生成「可合并」结论
+  delivery: |
+    - [ ] 确认 feature-check verify 已通过
+
+feature-verify:
+  risk: 中
+  description: >-
+    L1 验收：对照 spec/tasks/field-map 与代码，执行 lint+build。
+    可选衔接 api-smoke（L2）、feature-e2e-verify（L3）。
+    用户说【verify】、验收 feature 时触发。
+  boundaries: |
+    - ✅ 跑 feature-check verify、对照 tasks 勾选
+    - 🚫 未跑 lint/build 即报 PASS
+  delivery: |
+    - [ ] feature-check verify <slug> 结果写入汇报
+    - [ ] tasks 未完成项列出
+
+feature-archive:
+  risk: 严
+  description: >-
+    将已验收 spec 合并至 docs/specs/ 并归档 docs/features/<slug>/。
+    用户说【archive】、功能上线归档时触发；须 feature-verify PASS 后执行。
+  boundaries: |
+    - ✅ Delta 合并 spec、运行 spec-index.py
+    - 🚫 verify 未 PASS 合并主库
+  delivery: |
+    - [ ] feature-check archive-ready <slug>
+    - [ ] spec-index.py 已刷新
+
+feature-e2e-verify:
+  risk: 中
+  description: >-
+    对照 e2e.md 在浏览器执行 P0 交互冒烟；优先 Browser MCP，不可用则降级清单。
+    用户说【verify-e2e】、UI 验收、浏览器回归时触发。
+  boundaries: |
+    - ✅ 只测 e2e.md P0 路径
+    - 🚫 MCP 不可用却声称已浏览器验收通过
+  delivery: |
+    - [ ] P0 路径结果表（PASS/FAIL/skip）
+
+incremental-feature:
+  risk: 中
+  description: >-
+    在已有 Vue 页面增量加筛选、列、按钮、弹窗字段与接口；最小 diff，禁止整页重写。
+    用户说【增量】、在这个页面加、补字段、列表加一列时触发。
+  boundaries: |
+    - ✅ 改当前页目录与局部 services/types
+    - 🚫 整页重写或新建完整页面结构
+  delivery: |
+    - [ ] npm run lint-fix
+    - [ ] 规范预加载已汇报
+
+spec-research-clarify:
+  risk: 松
+  description: >-
+    识别复杂需求歧义与风险，生成优先级澄清问题并记录 research.md。
+    需求调研、方案评审或 feature-dev 判定高复杂度时触发。
+  boundaries: |
+    - ✅ 产出澄清问题与决策记录
+    - 🚫 代替用户做 blocker 业务决策
+  delivery: |
+    - [ ] research.md / clarify-log 已更新
+
+prd-markdown-ingest:
+  risk: 松
+  description: >-
+    清洗语雀/飞书 PRD Markdown，提取图片 URL 并输出结构化 prd-digest。
+    用户粘贴语雀/飞书 Markdown 或说 PRD Markdown 接入时触发。
+  boundaries: |
+    - ✅ 解析粘贴内容，不臆造 PRD 原文
+    - 🚫 跳过清洗直接写页面代码
+  delivery: |
+    - [ ] prd-digest 结构完整（页面/字段/交互）
+
+prd-feature-dev:
+  risk: 中
+  description: >-
+    解析 PRD 文案与 UI 截图，提取页面结构、字段、交互与接口规划。
+    用户说按 PRD 开发、实现需求时触发；Markdown 先走 prd-markdown-ingest。
+  boundaries: |
+    - ✅ 产出需求摘要后衔接 feature-dev-workflow
+    - 🚫 无 PRD 依据编造业务规则
+  delivery: |
+    - [ ] 需求摘要与页面规划已对齐用户
+
+prototype-html-feature-dev:
+  risk: 中
+  description: >-
+    解析静态/Axure HTML 原型并映射为 Vue 页面；交互页 curl ingest + MCP 实点 P0。
+    用户说按原型开发、静态页转 Vue、Axure 链接时触发。
+  boundaries: |
+    - ✅ 解析 DOM/page-spec-panel，交互页须 MCP P0
+    - 🚫 无原型依据添加业务字段
+  delivery: |
+    - [ ] 交互页 P0 路径已实点或列人工清单
+
+figma-feature-dev:
+  risk: 中
+  description: >-
+    通过 Figma MCP 读取设计稿并切符合团队规范的 Vue 页面。
+    用户粘贴 figma.com 链接并说按设计稿开发、Figma 实现时触发。
+  boundaries: |
+    - ✅ MCP 读设计 + 对齐 project conventions
+    - 🚫 无 Figma 依据臆造布局
+  delivery: |
+    - [ ] 设计关键区块已对照实现
+
+spec-analyze-ui-images:
+  risk: 松
+  description: >-
+    结构化分析 PRD/设计稿截图，提取布局、组件、交互与状态信息。
+    用户上传界面截图、原型图时触发；常由 prd/figma 工作流调用。
+  boundaries: |
+    - ✅ 只分析可见 UI，标注不确定项
+    - 🚫 猜测不可见接口字段
+  delivery: |
+    - [ ] 输出结构化 UI 分析表
+
+vue-page-codegen:
+  risk: 中
+  description: >-
+    生成符合团队规范的 Vue 3 列表/表单/详情/弹窗/工作台页面代码。
+    由 feature-dev-workflow ③ 或【新建】独立触发；增量见 incremental-feature；vue@2.x 见 Vue2 指南。
+  boundaries: |
+    - ✅ 写码前 Read rules-activation 与页面类型 rules
+    - 🚫 未预加载直接生成页面
+  delivery: |
+    - [ ] 规范预加载汇报 + lint-fix
+
+api-integration:
+  risk: 中
+  description: >-
+    手写接口联调：生成 services/types、字段映射与分页对齐；入参透传、出参原样绑定。
+    用户说联调、对接接口、字段对一下、联调报错时触发；有 OpenAPI 优先 openapi-api-integration。
+  boundaries: |
+    - ✅ 按接口文档写字段，不改 request 封装
+    - 🚫 buildXxxQuery 兜底、normalizeRows 猜字段
+  delivery: |
+    - [ ] field-map 与页面绑定一致
+
+openapi-api-integration:
+  risk: 中
+  description: >-
+    从 OpenAPI/Swagger（JSON/YAML/URL）生成 types 与 services 并联调页面绑定。
+    用户说 OpenAPI、Swagger、openapi.json、按接口文档自动生成类型时触发；优先于 api-integration。
+  boundaries: |
+    - ✅ 以 spec 为准生成，不猜 schema
+    - 🚫 手写与 OpenAPI 冲突的字段名
+  delivery: |
+    - [ ] types/services 与 spec 路径一致
+
+api-smoke:
+  risk: 严
+  description: >-
+    用 curl 对 test/staging 发最小请求，核对 status、业务 code 与 field-map/OpenAPI 一致。
+    用户说接口探针、HTTP 冒烟、curl 验证、联调验收时触发。
+  boundaries: |
+    - ✅ 最小探针请求，记录响应摘要
+    - 🚫 token 写入仓库；对 prod 未授权写操作
+  delivery: |
+    - [ ] 探针结果表（endpoint/status/结论）
+
+code-review:
+  risk: 松
+  description: >-
+    对 Vue 前端改动做规范审查，只评不改、不自动修复。
+    用户说 review、检查是否符合规范时触发；rules-refactor 闭环中作审查步骤。
+  boundaries: |
+    - ✅ 输出问题清单与严重级别
+    - 🚫 未经要求直接改代码
+  delivery: |
+    - [ ] 审查报告（BLOCKER/MAJOR/MINOR）
+
+ci-fix:
+  risk: 中
+  description: >-
+    在失败日志基础上最小改动修复 build/test/vue-tsc，循环重跑至通过。
+    用户说 CI 挂了、build 失败、test 挂了时触发。
+  boundaries: |
+    - ✅ 只修与失败相关的最小 diff
+    - 🚫 删测试、降 ESLint 标准通过 CI
+  delivery: |
+    - [ ] npm run build（及失败时的 test）已通过
+
+lint-check:
+  risk: 中
+  description: >-
+    执行 ESLint 检查并修复未使用引入、no-unused-vars 等；交付前零 error。
+    用户说 lint、eslint、未使用引入时触发；大批量改码后自动衔接。
+  boundaries: |
+    - ✅ npm run lint-fix + 手动清残留 error
+    - 🚫 eslint-disable 整文件
+  delivery: |
+    - [ ] ESLint 零 error 已确认
+
+unit-test-codegen:
+  risk: 中
+  description: >-
+    为 utils、toXxxParams、constants、services 生成单元测试（Vitest/Jest 按 package.json）。
+    用户说写单测、补测试、test:unit 时触发；不默认 E2E。
+  boundaries: |
+    - ✅ 优先纯函数与 services 形态测试
+    - 🚫 为通过而删断言或 mock 一切
+  delivery: |
+    - [ ] 新增测试可运行（npm run test 相关）
+
+bugfix-workflow:
+  risk: 中
+  description: >-
+    四阶段系统化调试（复现→假设→验证→修复）前端 Bug；MCP 可用时实点，否则静态读码+用户证据。
+    用户说【bug】、报错、异常、点击无反应时触发。
+  boundaries: |
+    - ✅ 先收集运行时证据再改码
+    - 🚫 无证据大范围重构
+  delivery: |
+    - [ ] 根因与验证步骤已说明；lint-fix
+
+code-normalize:
+  risk: 中
+  description: >-
+    按全量 rules 整理单页/单模块代码，不改业务行为。
+    用户说按规范优化、规范化、整理代码（单页范围）时触发；全项目用 rules-refactor。
+  boundaries: |
+    - ✅ 命名、types、services 归位
+    - 🚫 改接口字段语义或交互行为
+  delivery: |
+    - [ ] lint-fix + 行为不变说明
+
+page-refactor:
+  risk: 中
+  description: >-
+    拆分过大 Vue 页面，提取子组件与 hooks，消除重复逻辑。
+    用户说拆分这个页面、文件太大了时触发；跨模块组件见 shared-component。
+  boundaries: |
+    - ✅ 同模块内拆分，保持路由不变
+    - 🚫 拆分同时改业务逻辑
+  delivery: |
+    - [ ] 拆分后文件行数达标；lint-fix
+
+rules-refactor:
+  risk: 严
+  description: >-
+    全项目按 .cursor/rules 重构至合规，功能不变。
+    须先 docs/features/project-refactor/ ready，收尾【verify】project-refactor。
+    用户说全量重构、按 rules 重构、规范重构、project refactor 时触发。
+  boundaries: |
+    - ✅ 按 project-refactor tasks 分阶段推进至全部合规
+    - 🚫 无 project-refactor spec 大规模改码；改业务行为；中途停问「是否继续」
+  delivery: |
+    - [ ] lint/build 通过；code-review 无 BLOCKER
+
+vue2-to-vue3-refactor:
+  risk: 严
+  description: >-
+    Vue2 升 Vue3，功能不变。须先 docs/features/vue3-migration/ ready，
+    收尾【verify】vue3-migration。与 project-refactor 互斥。
+  boundaries: |
+    - ✅ 按 vue3-migration tasks 分阶段迁移
+    - 🚫 无 vue3-migration spec 改码；同文件混用 Vue2/Vue3
+  delivery: |
+    - [ ] verify PASS；build/vue-tsc 通过
+
+project-bootstrap:
+  risk: 中
+  description: >-
+    扫描 package.json、request 封装、路由、权限等真实约定，产出 project-conventions 与 spec 索引。
+    用户说扫描项目约定、bootstrap、对齐本项目配置、onboard 时触发。
+  boundaries: |
+    - ✅ 只记录扫描事实，不覆盖 rules 通用约定
+    - 🚫 编造未验证的 request 路径
+  delivery: |
+    - [ ] project-conventions.md + spec-index 已生成
+
+route-permission:
+  risk: 严
+  description: >-
+    为新页面注册本地路由 path；菜单权限由后端接口配置，前端不做按钮级权限。
+    用户说加路由、注册页面路由、新页面路由时触发；常与 feature-dev-workflow 配合。
+  boundaries: |
+    - ✅ 只增路由注册，path 与用户确认
+    - 🚫 擅自改已有路由 path；加 v-permission
+  delivery: |
+    - [ ] 路由可访问；path 已记录到 spec
+
+shared-component:
+  risk: 中
+  description: >-
+    封装跨模块 UI 公共组件至顶层 components/；同模块多页放 views/<module>/components/。
+    用户说跨模块封装、封装公共组件、多个模块共用、提取组件时触发。
+  boundaries: |
+    - ✅ 确认跨模块复用后再提升顶层
+    - 🚫 业务页面逻辑塞进公共组件
+  delivery: |
+    - [ ] 组件 API 已文档化；lint-fix
+
+skill-creator:
+  risk: 中
+  description: >-
+    按团队规范创建、修改或优化 Cursor Agent Skill（SKILL.md、manifest、触发词）。
+    用户说新建 skill、创建 skill、优化 skill description、把这段流程做成 skill、skill-creator 时触发。
+    维护现有业务 Skill 见 skill-conventions，不写 Vue 业务代码。
+  boundaries: |
+    - ✅ 创建/修改 .cursor/skills/、manifest、README、CHANGELOG
+    - ⚠️ 改 feature-dev-workflow 路由表前先确认 dependsOn
+    - 🚫 把 Vue 业务规范塞进 Skill；未 check 即声称发布
+  delivery: |
+    - [ ] skills-version.py check PASS
+    - [ ] README 路由表 + CHANGELOG 已更新

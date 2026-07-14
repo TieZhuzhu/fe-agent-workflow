@@ -1,0 +1,218 @@
+---
+description: 前后端接口对接权威规范。请求入参、响应数据、字段绑定、services 层约定。新建页、联调、api-integration、code-normalize 时强制遵循。适用于任何前端项目。
+globs: **/*.{vue,ts,js}
+alwaysApply: false
+---
+
+# 接口对接规范
+
+> **适用：** uni-app 移动端项目的 **services 封装、列表筛选、表单提交、响应绑定**。
+>
+> **权威优先级：** **OpenAPI/Swagger spec（机器可读）** ≈ 接口文档 / Swagger UI > PRD 文案 > 设计稿 label（prop 名不得以设计稿为准）。
+>
+> 有 spec 时走 Skill **`openapi-api-integration`**，从 Schema 生成 `types.ts` / 核对 services。
+>
+> **核心原则：** **入参原样透传，出参原样使用**；字段改名/合并仅在文档明确要求时做；**展示层**与**数据层**分离。
+
+---
+
+## 1. services 层
+
+| 项 | 约定 |
+|----|------|
+| 位置 | **默认** → 页面目录 `services.ts` / `services.js`；**存量集中式** → `service/<module>.js` 或 bootstrap 扫描路径（沿用项目惯例）；**组件独有** → `components/<Name>/services.*`；**全局共用** → `common/` 或项目根 `service/` |
+| 导出 | `export const GetXxx = (data) => request(...)` 箭头函数 |
+| request | import 路径与同模块已有 services **一致**，禁止臆造 |
+| 解包 | 响应解包在 **request 拦截器** 完成，页面/hook **不重复**解包 |
+| 类型 | 请求/响应实体定义在页面 `types.ts`，services 只做调用 |
+| 禁止 | 无约定的随意集中堆放；新建项目优先页面级，老项目集中式可继续 |
+
+```ts
+// services.ts
+import request from '@/config/request' // 以项目为准
+import type { OrderListParams } from './types'
+
+/** 订单列表 */
+export const GetOrderList = (data: OrderListParams) =>
+  request({ url: '/orders', method: 'get', params: data })
+```
+
+---
+
+## 2. 请求入参（禁止兜底）
+
+### 原则
+
+- **筛选/查询/提交参数：不做空值兜底**，不把 `undefined`/`null` 改成 `''`，也不写 `field || undefined`
+- 表单 `reactive` 有什么，**原样传给接口**（或只 pick 文档列出的字段）
+- **禁止** `buildXxxQuery` / `pruneEmpty` / 全字段 `|| ''` 仅为了「安全」
+- 若 HTTP 客户端会自动省略 `undefined` 的 query 字段，可依赖该行为；**不要**为省略而手动 `|| undefined`
+
+### 为什么不用 `||`
+
+| 写法 | `value = 0` 时 | 问题 |
+|------|----------------|------|
+| `value \|\| ''` | 变成 `''` | 数字 0 被吞掉 |
+| `value \|\| undefined` | 变成 `undefined` | 数字 0 被吞掉 |
+| 原样传 `value` | 仍为 `0` | ✅ |
+
+需要默认值时用 **`??`**（仅当业务语义确需默认，**不用于**「空筛选条件」）：
+
+```ts
+// ✅ 业务默认值（如分页）
+const pageNo = query.pageNo ?? 1
+
+// ❌ 用 || 处理入参
+payStatusCode: form.payStatusCode || ''
+```
+
+### 允许的唯一例外：文档要求的字段映射
+
+满足 **任一** 才可写 1～3 行映射（**禁止**泛称 `buildXxxQuery`；禁止顺带判空兜底）：
+
+1. 表单字段名 ≠ 接口参数名（`customerKeyword` → `customerName`）
+2. 多字段合并（`orderNo` + `productName` → `keyword`）
+3. 结构拆分（`dateRange` → `startDate` / `endDate`）
+4. 同一映射 **3+ 处**复用 → 可抽 `toXxxParams`，**仍不兜底**
+
+```ts
+// ✅ 仅映射，不垫空
+async function loadList() {
+  const [startDate, endDate] = filters.dateRange ?? []
+  await GetOrderList({
+    ...filters,
+    customerName: filters.customerKeyword,
+    startDate,
+    endDate
+  })
+}
+```
+
+---
+
+## 3. 响应数据（禁止过度 normalize）
+
+### 原则
+
+- `types.ts` 的 `XxxItem` / `XxxDetail` **与接口文档字段一致**（含命名风格）
+- 列表/详情：**接口返回什么，state 存什么**，模板 **直接绑定接口字段**
+- **禁止**在 `utils.ts` 把一行接口数据 **重组成另一套字段** 再渲染
+- **禁止**链式 fallback 猜字段：`row.a || row.b || row.c || '-'`
+
+### 反模式（禁止）
+
+```ts
+// ❌ 万能 normalize：多实体混在一函数、长链 || 猜字段 → 易串字段、展示错乱
+function normalizeRows(rows) {
+  return rows.map((row, index) => ({
+    id: row.id || row.memberId || row.managerId || index + 1,
+    name: row.couponName || row.title || row.name || row.real_name || '-',
+    code: row.code || row.productCode || row.user_name || '-',
+    // ...
+  }))
+}
+```
+
+**问题：** 不同业务实体共用一套字段名，A 接口的空字段会显示 B 接口的同名残留值，造成 **内容错乱**。
+
+### 正确做法
+
+```ts
+// ✅ hook：原样赋值
+const list = ref<CouponItem[]>([])
+async function loadList() {
+  const res = await GetCouponList(params)
+  list.value = res?.records ?? []
+}
+```
+
+```vue
+<!-- ✅ 模板：绑接口字段；展示兜底只在 UI 层、单字段 -->
+<view class="row-item">
+  <text>{{ item.couponName ?? '-' }}</text>
+  <text>{{ formatMoney(item.payAmount) }}</text>
+</view>
+```
+
+### 何时允许转换响应
+
+| 允许 | 不允许 |
+|------|--------|
+| 拦截器 / services **统一** snake_case → camelCase（全项目一次） | 每页一个 `normalizeXxx` 猜字段 |
+| `constants.ts` 枚举 code → label 映射 | 把多种实体 merge 成 `name`/`code` 通用列 |
+| 展示用 `formatDate` / `formatMoney`（纯展示） | 改写入参对象再存 state |
+
+---
+
+## 4. 展示层空值（与数据层分离）
+
+- **数据层**（ref / reactive）：保持接口原值，**不**为显示而改数据
+- **展示层**（template / 格式化函数）：单字段兜底，优先 **`??`**
+
+```vue
+<!-- ✅ 0 会正常显示 -->
+{{ row.stock ?? '-' }}
+
+<!-- ❌ 0 会变成 '-' -->
+{{ row.stock || '-' }}
+```
+
+- 金额、日期用 **formatter**，不对整行做 map
+- 接口未就绪：**空态 view + TODO**，禁止 mock 列表数据
+
+---
+
+## 5. 分页与列表
+
+- 分页参数名以 **接口文档** 为准（`pageNo`/`pageSize` 或 `current`/`size`）
+- 响应列表路径以文档为准；与页面分页逻辑不一致时，在 **request 拦截器** 或 **service 调用处一处**映射，并注释
+- 禁止在 methods / hook 里把分页响应再包一层无意义结构
+
+---
+
+## 6. 枚举与常量
+
+- 状态码、类型码：接口文档枚举 → `constants.ts`（`code` + `label`）
+- 模板：`getLabel(row.status)` 或映射表，**不**在 normalize 里写死中文
+
+---
+
+## 7. 错误与联调
+
+- `code !== 0` / HTTP 错误：依赖 request 拦截器统一提示
+- 页面 catch 后设置 `error` 状态，**禁止静默吞掉**
+- 提交成功/失败：`uni.showToast` / `uni.showModal` 或项目统一反馈
+- 联调时核对：Method、Content-Type、字段名、分页、枚举与文档一致
+
+---
+
+## 8. 与 types.ts / utils.ts 的边界
+
+| 文件 | 接口相关职责 |
+|------|----------------|
+| `types.ts` | 与文档一致的 `XxxItem`、`XxxParams`、`PageResult` |
+| `services.ts` | 发起请求，不做字段重组 |
+| `hooks/` | 组装入参（仅映射）、赋值响应，**不** normalize 整表 |
+| `utils.ts` | `formatMoney`、`formatDate` 等展示工具；**不**放 `normalizeRows` 猜字段 |
+
+---
+
+## 9. 验收（阻塞）
+
+**入参**
+
+- [ ] 无 `buildXxxQuery` / `pruneEmpty` 仅判空
+- [ ] 入参无 `field || ''` / `field || undefined`
+- [ ] 需要默认值时用 `??`，且确有业务语义（如默认页码）
+
+**出参**
+
+- [ ] 无多实体共用 `normalizeRows` + 长链 `||`
+- [ ] 模板 prop 与接口字段一致；label 用设计稿中文
+- [ ] 展示兜底仅在 template/formatter，用 `??` 不用 `||`（当 0 为合法值时）
+
+**通用**
+
+- [ ] types 与接口文档一致；无凭空 `any`
+- [ ] 无 mock 列表/详情数据
+- [ ] request 路径与同模块 services 一致

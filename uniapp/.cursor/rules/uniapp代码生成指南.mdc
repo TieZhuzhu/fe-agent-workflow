@@ -1,0 +1,212 @@
+---
+description: uni-app 页面与组件代码生成主指南。列表/表单/详情/弹层页、原生组件与 uview-ui 选用、生命周期、导航传参。
+globs: **/*.{vue,js,ts}
+alwaysApply: false
+---
+
+# uni-app 代码生成指南
+
+> **权威入口**：所有 uni-app 页面生成须先 Read 本文件 + 版本对应 Vue 指南（`Vue代码生成指南.mdc` 或 `Vue2代码生成指南.mdc`）。
+
+## 页面类型判定
+
+| 类型 | 特征 | 关键组件 |
+|------|------|----------|
+| 列表页 | 下拉刷新 + 上拉加载 / 分页 | `onPullDownRefresh` + `onReachBottom`（本项目主流）；局部滚动用 `scroll-view` |
+| 表单页 | 多字段录入 + 提交 | `input`、`textarea`、`picker`；复杂选择器用 `u-picker` |
+| 详情页 | 只读信息展示 | `view` + `text` 分组 |
+| 弹层页 | 半屏/全屏弹层 | `u-popup` 或页面内 `v-if` 遮罩 |
+| 组合页 | 列表 + 底部操作 / Tab 切换 | `u-tabs` 或自定义 tab |
+
+## 页面骨架（Vue 3 默认）
+
+```vue
+<template>
+  <view class="page">
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { onLoad, onPullDownRefresh, onReachBottom } from '@dcloudio/uni-app'
+import { GetList } from './services' // 默认页面级；存量集中式见 project-conventions.md
+import type { ListItem } from './types'
+
+const list = ref<ListItem[]>([])
+const loading = ref(false)
+
+const loadList = async () => {
+  loading.value = true
+  try {
+    const res = await GetList({ pageNo: 1, pageSize: 20 })
+    list.value = res.data
+  } finally {
+    loading.value = false
+  }
+}
+
+onLoad((options) => {
+  // 接收路由参数 options.id 等
+})
+
+onMounted(() => {
+  loadList()
+})
+
+onPullDownRefresh(async () => {
+  await loadList()
+  uni.stopPullDownRefresh()
+})
+</script>
+
+<style lang="scss" scoped>
+.page {
+  min-height: 100vh;
+  background: #f5f5f5;
+}
+</style>
+```
+
+## 页面骨架（Vue 2）
+
+```vue
+<template>
+  <view class="page">
+  </view>
+</template>
+
+<script>
+import { GetList } from './services' // 默认页面级；存量集中式见 project-conventions.md
+import { mapState } from 'vuex'
+
+export default {
+  data() {
+    return {
+      list: [],
+      loading: false
+    }
+  },
+  onLoad(options) {
+    this.loadList()
+  },
+  onPullDownRefresh() {
+    this.loadList().finally(() => uni.stopPullDownRefresh())
+  },
+  methods: {
+    async loadList() {
+      this.loading = true
+      try {
+        const res = await GetList({ pageNo: 1, pageSize: 20 })
+        this.list = res.data
+      } finally {
+        this.loading = false
+      }
+    }
+  }
+}
+</script>
+```
+
+## 导航与传参
+
+```js
+// 普通页（非 tabBar）
+uni.navigateTo({ url: '/other/product/detail?id=' + id })
+// 或项目封装
+this.$navigateTo('/order/list?status=1')
+
+// tabBar 页（本项目自定义 tab，走 index 壳）
+uni.switchTab({ url: '/pages/index/index' })
+
+// 返回并传参（EventChannel 或全局 store，按项目惯例）
+uni.navigateBack()
+```
+
+接收参数：页面 `onLoad(options)` 中读取 `options.id`。
+
+**禁止**硬编码完整域名路径；url 以 `pages.json` 注册路径为准。
+
+## 自定义导航栏
+
+`pages.json` 设置 `"navigationStyle": "custom"` 时：
+
+- 使用项目已有组件，`@/components/customNav/customNav`（标签 `custom-nav`）
+- 适配状态栏高度：`uni.getSystemInfoSync().statusBarHeight`
+- 小程序胶囊位： 自定义导航栏会处理，**禁止**在页面画假胶囊
+
+## Figma / 设计稿切图还原
+
+由 [figma-feature-dev](../skills/figma-feature-dev/SKILL.md) 执行时：
+
+| 范围 | 要求 |
+|------|------|
+| **页面内容区** | 间距、字号、颜色、圆角等 **rpx 百分百还原**（750 稿 1px=1rpx） |
+| **系统 chrome** | 状态栏、胶囊、底部安全区指示条 **不写入代码**，仅占位/留白 |
+| **业务顶栏/底栏** | 导航内容与固定操作栏样式与稿一致 |
+
+组件库默认样式与稿不符时，以设计稿为准覆盖。
+
+## UI 选用原则
+
+| 场景 | 优先 | 备选 |
+|------|------|------|
+| 布局容器 | `view` | — |
+| 文字 | `text` | `rich-text`（富文本） |
+| 图片 | `image`（`mode` 必填） | — |
+| 列表滚动 | `scroll-view` | 页面级 `onReachBottom` |
+| 按钮 | `button` | `u-button`（需主题统一时） |
+| 输入 | `input` | `u-input` |
+| 弹窗 | 页面内遮罩 | `u-popup` |
+| 加载态 | `uni.showLoading` | `u-loading` |
+| 提示 | `uni.showToast` | `u-toast` |
+
+## 列表页要点
+
+- `pages.json` 开启 `enablePullDownRefresh`（若需下拉刷新）
+- 空态、加载态、错误态须处理
+- 分页：对齐项目分页字段（bootstrap 扫描 `pageNo`/`pageSize` 等）
+- 长列表考虑虚拟列表或分页，避免一次渲染过多节点
+
+## 表单页要点
+
+- 提交前校验：Vue 3 用函数校验；Vue 2 在 `methods` 中校验
+- 防重复提交：提交中禁用按钮
+- 敏感操作二次确认：`uni.showModal`
+
+## 详情页要点
+
+- 只读展示，字段空值用 `?? '-'`（不用 `||`，避免吞 0）
+- 分享：按需 `onShareAppMessage`（小程序）
+
+## hooks 拆分（Vue 3）
+
+| 页面 | index.vue | hooks |
+|------|-----------|-------|
+| 简单列表 | 主流程在页面 | 可不建 hooks |
+| 表单/详情 | 布局 + 绑定 | `useXxxForm.ts` / `useXxxDetail.ts` |
+| 复杂页 | 布局编排 | 每独立数据域一个 hook |
+
+**反模式**：`index.vue` 仅解构 20+ 项自单一上帝 hook。
+
+## 子组件
+
+页面私有组件放 `./components/<Name>/index.vue`，引用：
+
+```js
+import SkuPicker from './components/SkuPicker'
+```
+
+## 平台差异
+
+- 样式单位优先 **rpx**；H5 固定像素场景可用 `px` 并加条件编译
+- 安全区：`env(safe-area-inset-bottom)` 处理 iPhone 底部
+- 登录态、分享、支付等按平台 `#ifdef` 分支，逻辑集中在 `common/` 或 `hooks/`
+
+## 新建页检查清单
+
+1. [ ] 非 tabBar 页已放 `subPackages`，未入主包
+2. [ ] `pages.json` 已注册 path 与 style
+3. [ ] 原生组件优先，uview 仅补充
+4. [ ] `onLoad` 正确处理路由参数
+5. [ ] 接口走项目 request 封装，无 mock
+6. [ ] 多端差异已条件编译（若适用）

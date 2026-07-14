@@ -1,0 +1,172 @@
+# MCP 能力跨 Host 映射（Cursor authoring → Claude Code / Codex）
+# 由 export-agent-host.py 渲染为 shared/mcp-host-adapter.md
+
+schemaVersion: 1
+
+# Skills 对 Browser 能力的抽象需求（各 Host 用不同 MCP 满足，工具名可能略有差异）
+skill_browser_requirements:
+  bugfix-workflow:
+    - navigate
+    - snapshot
+    - click
+    - network
+  feature-e2e-verify:
+    - navigate
+    - snapshot
+    - click
+    - network
+  prototype-html-feature-dev:
+    - navigate
+    - snapshot
+    - click
+
+# 能力 → 工具名映射（Read MCP schema 时对照）
+browser_tool_aliases:
+  navigate:
+    cursor: browser_navigate
+    playwright: browser_navigate
+    real-browser: browser_navigate
+  snapshot:
+    cursor: browser_snapshot
+    playwright: browser_snapshot
+    real-browser: browser_snapshot
+  click:
+    cursor: browser_click
+    playwright: browser_click
+    real-browser: browser_click
+  network:
+    cursor: browser_network
+    playwright: browser_network_requests
+    real-browser: browser_network
+
+capabilities:
+  browser:
+    label: 浏览器自动化 / UI 实点
+    used_by:
+      - bugfix-workflow
+      - feature-e2e-verify
+      - prototype-html-feature-dev
+    cursor:
+      server: plugin-browse-browser
+      discover: mcps/plugin-browse-browser/tools/
+      tools:
+        - browser_navigate
+        - browser_snapshot
+        - browser_click
+        - browser_network
+      env_note: Browser MCP Node 由 Cursor 启动进程决定；Agent Shell 内 nvm use 不能修复 MCP
+      setup: Cursor Settings → MCP → 重启 browser；Node ≥18；从 nvm use 20 后的终端启动 Cursor
+    claude-code:
+      server:
+        - real-browser
+        - playwright
+        - user-browser
+      recommended: real-browser（已登录 Chrome）或 playwright
+      discover: 项目 MCP 配置 / Claude Code 插件市场
+      tools:
+        - browser_navigate
+        - browser_snapshot
+        - browser_click
+      env_note: 无 Cursor plugin-browse-browser；Real Browser MCP 工具名与 Skills 最对齐
+      setup: |
+        Real Browser：npx -y real-browser-mcp + Chrome 扩展
+        Playwright：npx @playwright/mcp@latest
+      fallback:
+        - Playwright via Shell
+        - 用户粘贴 console/network
+        - 静态读码 + e2e.md 人工清单
+    codex:
+      server:
+        - playwright
+        - real-browser
+        - chrome-devtools
+      recommended:
+        default: playwright
+        admin_logged_in: real-browser
+      config_key:
+        playwright: mcp_servers.playwright
+        real-browser: mcp_servers.real-browser
+        chrome-devtools: mcp_servers.chrome-devtools
+      discover: ~/.codex/config.toml · 项目 `.codex/config.toml` · Codex App Plugins · 会话 `/mcp`
+      tools:
+        - browser_navigate
+        - browser_snapshot
+        - browser_click
+        - browser_network_requests
+      env_note: Codex 无内置 Browser MCP，但可配置 stdio MCP；Playwright 为官方插件目录推荐
+      setup: |
+        Playwright（官方）：codex mcp add playwright npx "@playwright/mcp@latest"
+        Real Browser（中后台推荐，复用已登录 Chrome）：
+          codex mcp add real-browser -- npx -y real-browser-mcp
+          + 安装 Chrome 扩展 Real Browser MCP
+        验证：Codex 会话内 /mcp 列出 tools
+      playwright_config: |
+        [mcp_servers.playwright]
+        command = "npx"
+        args = ["@playwright/mcp@latest"]
+        # Linux 需 headed 时：env_vars = ["DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY"]
+      real_browser_config: |
+        [mcp_servers.real-browser]
+        command = "npx"
+        args = ["-y", "real-browser-mcp"]
+      fallback:
+        - MCP 未配置 → Shell Playwright 一次性脚本
+        - 用户粘贴 console/network
+        - 静态读码 + 人工清单
+    github-copilot:
+      inherit: codex
+
+  figma:
+    label: Figma 设计稿读取
+    used_by:
+      - figma-feature-dev
+    cursor:
+      server: plugin-figma-figma
+      discover: mcps/plugin-figma-figma/tools/
+      tools:
+        - get_design_context
+        - get_screenshot
+        - get_metadata
+        - use_figma
+      setup: 启用 Figma MCP；粘贴 figma.com/design URL
+    claude-code:
+      server: figma
+      discover: Claude Code Figma 插件 / MCP
+      tools:
+        - get_design_context
+        - get_screenshot
+      setup: 安装 Figma MCP 插件；无则降级截图 + spec-analyze-ui-images
+      fallback:
+        - 用户上传设计稿截图 → spec-analyze-ui-images
+        - PRD 文字描述
+    codex:
+      server: figma
+      config_key: mcp_servers.figma
+      url: https://mcp.figma.com/mcp
+      discover: ~/.codex/config.toml · 项目 `.codex/config.toml` · Codex App → Plugins → Figma
+      tools:
+        - get_design_context
+        - get_screenshot
+        - get_metadata
+        - get_variable_defs
+      env_note: Remote MCP 需 OAuth；`FIGMA_OAUTH_TOKEN` 或 `codex mcp login figma`；config 须 `[features] rmcp_client = true`
+      setup: codex mcp add figma --url https://mcp.figma.com/mcp（或 Codex App 安装 Figma 插件）；会话内 `/mcp` 验证
+      fallback:
+        - 未登录 / token 失效 → codex mcp login figma
+        - 仍不可用 → 截图 + spec-analyze-ui-images
+        - PRD 文字描述
+    github-copilot:
+      inherit: codex
+
+  shell:
+    label: 终端 / Playwright 降级
+    used_by:
+      - feature-e2e-verify
+      - api-smoke
+      - feature-check
+    cursor:
+      note: Agent Shell 可用；Browser MCP 与 Shell Node 是两套环境
+    claude-code:
+      note: Shell 可用；Playwright 降级路径与 Cursor 相同
+    codex:
+      note: Shell 为主力；browser 类验收走 Playwright 或人工

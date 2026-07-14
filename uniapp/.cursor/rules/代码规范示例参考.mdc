@@ -1,0 +1,598 @@
+---
+description: uni-app 代码规范示例参考。**仅查阅，非预加载** — 不确定具体写法时按需 Read，禁止列入 rules-activation 预加载计划。
+globs: **/*.{vue,ts,js}
+alwaysApply: false
+---
+
+# 代码规范示例参考（uni-app）
+
+> **仅查阅，非预加载。** 写码前以 `uniapp代码生成指南.mdc` 与对应 Vue 版本指南为准；本文件提供可复制示例。
+
+**默认：uni-app + Vue 3 `<script setup>`；`vue@2.x` 见 §Vue 2。**
+
+示例路径为**行业通用结构**，不绑定任何具体业务项目。
+
+---
+
+## 1. 目录结构总览
+
+```
+pages/                              # 主包：tabBar + 启动页
+├── index/
+│   └── index.vue
+└── cart/
+    └── cart.vue
+
+subPackages/                        # 分包：按功能模块
+├── product/
+│   ├── list.vue
+│   ├── detail.vue
+│   └── components/                 # 子包内共用
+│       └── ProductCard/
+│           └── index.vue
+├── order/
+│   └── list/
+│       ├── index.vue
+│       ├── services.ts
+│       ├── constants.ts
+│       ├── types.ts
+│       └── components/
+│           └── OrderItem/
+│               └── index.vue
+└── user/
+    └── settings.vue
+
+components/                         # 跨子包公共组件
+├── CustomNav/
+│   └── index.vue
+└── EmptyState/
+    └── index.vue
+
+common/
+├── request.js                      # 或 utils/request.ts
+└── config.js
+
+service/                            # 存量集中式 API（可选）
+├── product.js
+└── order.js
+
+pages.json
+manifest.json
+```
+
+---
+
+## 2. Vue 3 列表页 — subPackages/product/list/index.vue
+
+```vue
+<template>
+  <view class="page">
+    <view class="search-bar">
+      <input
+        v-model="query.keyword"
+        class="search-input"
+        placeholder="搜索商品"
+        confirm-type="search"
+        @confirm="handleSearch"
+      />
+    </view>
+
+    <scroll-view
+      scroll-y
+      class="list-scroll"
+      @scrolltolower="handleLoadMore"
+    >
+      <view
+        v-for="item in list"
+        :key="item.id"
+        class="product-item"
+        @click="handleGoDetail(item)"
+      >
+        <image class="cover" :src="item.coverUrl" mode="aspectFill" />
+        <view class="info">
+          <text class="name">{{ item.name ?? '-' }}</text>
+          <text class="price">¥{{ item.price ?? '-' }}</text>
+        </view>
+      </view>
+
+      <view v-if="loading" class="loading-tip">加载中...</view>
+      <view v-if="!loading && !list.length" class="empty-tip">暂无商品</view>
+      <view v-if="finished && list.length" class="finished-tip">没有更多了</view>
+    </scroll-view>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { onLoad, onPullDownRefresh } from '@dcloudio/uni-app'
+import { GetProductList } from './services'
+import type { ProductItem, ProductListQuery } from './types'
+
+const list = ref<ProductItem[]>([])
+const loading = ref(false)
+const finished = ref(false)
+const query = ref<ProductListQuery>({
+  keyword: '',
+  pageNo: 1,
+  pageSize: 20
+})
+
+const loadList = async (reset = false) => {
+  if (loading.value) return
+  if (reset) {
+    query.value.pageNo = 1
+    finished.value = false
+  }
+  if (finished.value) return
+
+  loading.value = true
+  try {
+    const res = await GetProductList(query.value)
+    const rows = res.data ?? []
+    list.value = reset ? rows : [...list.value, ...rows]
+    if (rows.length < query.value.pageSize) {
+      finished.value = true
+    } else {
+      query.value.pageNo += 1
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleSearch = () => loadList(true)
+
+const handleLoadMore = () => loadList()
+
+const handleGoDetail = (item: ProductItem) => {
+  uni.navigateTo({
+    url: '/subPackages/product/detail?id=' + encodeURIComponent(String(item.id))
+  })
+}
+
+onLoad(() => {
+  loadList(true)
+})
+
+onPullDownRefresh(() => {
+  loadList(true).finally(() => uni.stopPullDownRefresh())
+})
+</script>
+
+<style lang="scss" scoped>
+.page {
+  min-height: 100vh;
+  background: #f5f5f5;
+}
+
+.list-scroll {
+  height: calc(100vh - 100rpx);
+}
+
+.product-item {
+  display: flex;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  background: #fff;
+}
+
+.cover {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 8rpx;
+}
+
+.info {
+  flex: 1;
+  margin-left: 20rpx;
+}
+
+.name {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.price {
+  margin-top: 12rpx;
+  font-size: 32rpx;
+  color: #e64340;
+}
+</style>
+```
+
+---
+
+## 3. Vue 3 详情页 — subPackages/product/detail.vue
+
+```vue
+<template>
+  <view class="page">
+    <swiper class="banner" circular indicator-dots>
+      <swiper-item v-for="(img, index) in detail?.imageList" :key="index">
+        <image class="banner-img" :src="img" mode="aspectFill" />
+      </swiper-item>
+    </swiper>
+
+    <view class="section">
+      <text class="title">{{ detail?.name ?? '-' }}</text>
+      <text class="price">¥{{ detail?.price ?? '-' }}</text>
+    </view>
+
+    <view class="footer-bar">
+      <button class="btn-cart" @click="handleAddCart">加入购物车</button>
+      <button class="btn-buy" type="primary" @click="handleBuy">立即购买</button>
+    </view>
+  </view>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import { GetProductDetail } from './services'
+import type { ProductDetail } from './types'
+
+const productId = ref('')
+const detail = ref<ProductDetail | null>(null)
+
+const loadDetail = async () => {
+  detail.value = await GetProductDetail({ id: productId.value })
+}
+
+const handleAddCart = () => {
+  // 调接口加购
+}
+
+const handleBuy = () => {
+  uni.navigateTo({
+    url: '/subPackages/order/submit/index?productId=' + encodeURIComponent(productId.value)
+  })
+}
+
+onLoad((options) => {
+  productId.value = options?.id ?? ''
+  if (productId.value) loadDetail()
+})
+</script>
+
+<style lang="scss" scoped>
+.page {
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+}
+
+.footer-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  background: #fff;
+}
+</style>
+```
+
+---
+
+## 4. Vue 3 弹层组件 — components/SkuPicker/index.vue
+
+原生遮罩 + uview 补充示例（复杂选择器可用 `u-popup`）：
+
+```vue
+<template>
+  <u-popup :show="visible" mode="bottom" round="16" @close="handleClose">
+    <view class="sku-panel">
+      <text class="title">选择规格</text>
+      <view
+        v-for="sku in skuList"
+        :key="sku.id"
+        class="sku-item"
+        :class="{ active: sku.id === selectedId }"
+        @click="handleSelect(sku)"
+      >
+        <text>{{ sku.name }}</text>
+      </view>
+      <button type="primary" @click="handleConfirm">确定</button>
+    </view>
+  </u-popup>
+</template>
+
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import type { SkuItem } from './types'
+
+const props = defineProps<{
+  modelValue: boolean
+  skuList: SkuItem[]
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [boolean]
+  confirm: [SkuItem]
+}>()
+
+const visible = ref(props.modelValue)
+const selectedId = ref('')
+
+watch(() => props.modelValue, (v) => { visible.value = v })
+watch(visible, (v) => emit('update:modelValue', v))
+
+const handleSelect = (sku: SkuItem) => {
+  selectedId.value = sku.id
+}
+
+const handleConfirm = () => {
+  const sku = props.skuList.find((s) => s.id === selectedId.value)
+  if (!sku) {
+    uni.showToast({ title: '请选择规格', icon: 'none' })
+    return
+  }
+  emit('confirm', sku)
+  visible.value = false
+}
+
+const handleClose = () => {
+  visible.value = false
+}
+</script>
+```
+
+---
+
+## 5. 页面接口 — services.ts（页面级，默认）
+
+```ts
+import request from '@/common/request'
+import type { ProductListQuery, ProductDetailParams } from './types'
+
+/** 商品列表 */
+export const GetProductList = (data: ProductListQuery) =>
+  request({ url: '/product/list', data, method: 'post' })
+
+/** 商品详情 */
+export const GetProductDetail = (data: ProductDetailParams) =>
+  request({ url: '/product/detail', data, method: 'get' })
+```
+
+### 集中式 service/product.js（存量项目沿用）
+
+```js
+import request from '@/common/request'
+
+export const GetProductList = (data) =>
+  request({ url: '/product/list', data, method: 'post' })
+```
+
+---
+
+## 6. types.ts
+
+```ts
+export interface ProductListQuery {
+  keyword: string
+  pageNo: number
+  pageSize: number
+}
+
+export interface ProductItem {
+  id: string
+  name: string
+  coverUrl: string
+  price: number
+}
+
+export interface ProductDetail {
+  id: string
+  name: string
+  price: number
+  imageList: string[]
+}
+
+export interface ProductDetailParams {
+  id: string
+}
+```
+
+---
+
+## 7. constants.ts / utils.ts
+
+```ts
+// constants.ts — 仅枚举与静态 options
+export const PRODUCT_STATUS = {
+  ON_SALE: 1,
+  OFF_SALE: 0
+} as const
+
+export const STATUS_TABS = [
+  { label: '全部', value: '' },
+  { label: '在售', value: 1 }
+]
+```
+
+```ts
+// utils.ts — 仅工具函数
+export const formatPrice = (price: number | undefined) => {
+  if (price === undefined || price === null) return '-'
+  return (price / 100).toFixed(2)
+}
+```
+
+---
+
+## 8. pages.json 注册
+
+```json
+{
+  "pages": [
+    {
+      "path": "pages/index/index",
+      "style": {
+        "navigationBarTitleText": "首页"
+      }
+    },
+    {
+      "path": "pages/cart/cart",
+      "style": {
+        "navigationBarTitleText": "购物车"
+      }
+    }
+  ],
+  "subPackages": [
+    {
+      "root": "subPackages/product",
+      "pages": [
+        {
+          "path": "list",
+          "style": {
+            "navigationBarTitleText": "商品列表",
+            "enablePullDownRefresh": true
+          }
+        },
+        {
+          "path": "detail",
+          "style": {
+            "navigationBarTitleText": "商品详情"
+          }
+        }
+      ]
+    }
+  ],
+  "tabBar": {
+    "list": [
+      { "pagePath": "pages/index/index", "text": "首页" },
+      { "pagePath": "pages/cart/cart", "text": "购物车" }
+    ]
+  }
+}
+```
+
+---
+
+## 9. 导航传参
+
+```js
+// 普通页跳转
+uni.navigateTo({
+  url: '/subPackages/product/detail?id=123'
+})
+
+// tabBar 页
+uni.switchTab({ url: '/pages/index/index' })
+
+// 目标页 onLoad
+onLoad((options) => {
+  const id = options?.id
+})
+```
+
+---
+
+## 10. Vue 2 列表页 — subPackages/order/list/index.vue
+
+```vue
+<template>
+  <view class="page">
+    <view v-for="item in list" :key="item.id" class="order-item" @click="handleGoDetail(item)">
+      <text class="order-no">{{ item.orderNo ?? '-' }}</text>
+      <text class="status">{{ item.statusDesc ?? '-' }}</text>
+    </view>
+    <view v-if="!list.length && !loading" class="empty">暂无订单</view>
+  </view>
+</template>
+
+<script>
+import { GetOrderList } from './services'
+
+export default {
+  data() {
+    return {
+      list: [],
+      loading: false,
+      query: { pageNo: 1, pageSize: 20 }
+    }
+  },
+  onLoad() {
+    this.loadList()
+  },
+  onPullDownRefresh() {
+    this.loadList().finally(() => uni.stopPullDownRefresh())
+  },
+  onReachBottom() {
+    this.loadMore()
+  },
+  methods: {
+    async loadList() {
+      this.loading = true
+      try {
+        const res = await GetOrderList(this.query)
+        this.list = res.data ?? []
+      } finally {
+        this.loading = false
+      }
+    },
+    async loadMore() {
+      this.query.pageNo += 1
+      const res = await GetOrderList(this.query)
+      this.list = [...this.list, ...(res.data ?? [])]
+    },
+    handleGoDetail(item) {
+      uni.navigateTo({
+        url: '/subPackages/order/detail?id=' + item.id
+      })
+    }
+  }
+}
+</script>
+```
+
+---
+
+## 11. 公共 hooks — hooks/useLoginGuard.ts（Vue 3）
+
+```ts
+import { onShow } from '@dcloudio/uni-app'
+import { useUserStore } from '@/store/user'
+
+export const useLoginGuard = () => {
+  const userStore = useUserStore()
+
+  onShow(() => {
+    if (!userStore.token) {
+      uni.navigateTo({ url: '/subPackages/user/login' })
+    }
+  })
+}
+```
+
+---
+
+## 12. 条件编译样式
+
+```scss
+/* #ifdef MP-WEIXIN */
+.custom-nav {
+  padding-top: 88rpx;
+}
+/* #endif */
+
+/* #ifdef H5 */
+.custom-nav {
+  padding-top: 44px;
+}
+/* #endif */
+```
+
+---
+
+## 13. components/index.ts 统一导出
+
+```ts
+export { default as SkuPicker } from './SkuPicker/index.vue'
+export { default as EmptyState } from './EmptyState/index.vue'
+```
+
+页面内引用：
+
+```ts
+import { SkuPicker } from './components'
+```

@@ -1,0 +1,365 @@
+---
+description: Vue 2 + Element UI + Options API 完整代码生成规范。仅当 package.json 中 vue 为 ^2.x 时启用，与 Vue 3 rules 对称。
+globs: **/*.{vue,js}
+alwaysApply: false
+---
+
+# Vue 2 代码生成指南
+
+> **启用条件：** `package.json` 中 `vue` 为 `^2.x`。此时**替代** Vue 3 专用的 `表单与详情页开发指南`、`复杂页面开发指南`、`状态与异步数据规范`（Pinia 部分）。
+>
+> 列表页骨架见 `Vue代码生成指南.mdc` §Vue 2；本节补全**表单 / 详情 / 复杂页 / 状态 / 路由**。
+
+---
+
+## 技术栈
+
+| 项 | Vue 2 |
+|----|-------|
+| UI | element-ui |
+| API | Options API（`export default { data, methods, ... }`） |
+| 状态 | Vuex（跨模块）；页面级放 `data` / `computed` |
+| 接口文件 | 页面目录 `services.js` |
+| 类型 | JSDoc 注释；可选同目录 `types.js` 导出常量形状说明 |
+| 路由 | `views/<module>/routes.js` |
+| 列表 | `HiTable-vue2/` → 复制到 `components/HiTable/` |
+| 文字按钮 | `el-button type="text"` |
+| 弹窗 | `:visible.sync` |
+| 插槽 | `slot-scope="scope"`、`slot="toolbar"` |
+| 深度选择器 | `::v-deep` 或 `/deep/` |
+| 样式 | mixin `$var`；`@use 'styles/tablePage.scss'` / `formPage.scss` |
+
+**禁止**在同一文件混用 `<script setup>`、Pinia、Element Plus API。
+
+---
+
+## SFC 结构顺序
+
+```vue
+<template>...</template>
+
+<script>
+import HiTable from '@/components/HiTable/index.vue'
+import { mapState, mapActions } from 'vuex'
+import { GetList, SaveItem } from './services'
+import { STATUS_OPTIONS } from './constants'
+import { EditDialog } from './components'
+
+export default {
+  name: 'ProductTagList',
+  components: { HiTable, EditDialog },
+  props: {},
+  data() {
+    return {
+      form: { name: '', status: '' },
+      dialogVisible: false,
+      currentRow: null,
+      loading: false,
+      submitting: false,
+    }
+  },
+  computed: {
+    ...mapState('user', ['permissions']),
+  },
+  mounted() {
+    // 按需 init
+  },
+  methods: {
+    handleSearch() {
+      this.$refs.tableRef.reload()
+    },
+    handleClear() {
+      this.form = { name: '', status: '' }
+      this.handleSearch()
+    },
+    handleEdit(row) {
+      this.currentRow = row
+      this.dialogVisible = true
+    },
+  },
+}
+</script>
+
+<style lang="scss" scoped>
+@use 'styles/tablePage.scss';
+</style>
+```
+
+- 方法统一 `handleXxx` 前缀
+- `data()` 只放响应式业务态；静态枚举用 `constants.js` import，**不要**放进 `data`
+
+---
+
+## 表单页 / 详情页
+
+### 目录结构
+
+```
+views/marketing/coupon-create/
+├── index.vue
+├── services.js
+├── constants.js
+├── components/           # 按需
+│   └── BasicInfo/index.vue
+└── mixins/               # 可选：复杂表单逻辑
+    └── couponFormMixin.js
+```
+
+Vue 2 **不用** `hooks/useXxx.ts`；逻辑放 `index.vue` 的 `methods` 或 `mixins/`（单页超 400 行再抽 mixin）。
+
+### 独立表单页
+
+```vue
+<template>
+  <div class="form-page">
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="120px" class="form-body">
+      <el-form-item label="名称" prop="name">
+        <el-input v-model="form.name" placeholder="请输入" maxlength="50" show-word-limit />
+      </el-form-item>
+      <el-form-item label="状态" prop="status">
+        <el-radio-group v-model="form.status">
+          <el-radio v-for="item in STATUS_OPTIONS" :key="item.value" :label="item.value">
+            {{ item.label }}
+          </el-radio>
+        </el-radio-group>
+      </el-form-item>
+    </el-form>
+    <div class="form-footer">
+      <el-button @click="handleCancel">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+    </div>
+  </div>
+</template>
+
+<script>
+import { GetCouponDetail, SaveCoupon } from './services'
+import { STATUS_OPTIONS } from './constants'
+
+export default {
+  name: 'CouponCreate',
+  data() {
+    return {
+      form: { name: '', status: '' },
+      rules: {
+        name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+        status: [{ required: true, message: '请选择状态', trigger: 'change' }],
+      },
+      submitting: false,
+      STATUS_OPTIONS,
+    }
+  },
+  mounted() {
+    if (this.$route.query.id) {
+      this.loadDetail(this.$route.query.id)
+    }
+  },
+  methods: {
+    async loadDetail(id) {
+      const res = await GetCouponDetail({ id })
+      this.form = res.data || {}
+    },
+    handleSubmit() {
+      this.$refs.formRef.validate(async (valid) => {
+        if (!valid) return
+        if (this.submitting) return
+        this.submitting = true
+        try {
+          await SaveCoupon(this.form)
+          this.$message.success('保存成功')
+          this.$router.back()
+        } catch (e) {
+          this.$message.error('保存失败')
+        } finally {
+          this.submitting = false
+        }
+      })
+    },
+    handleCancel() {
+      this.$router.back()
+    },
+  },
+}
+</script>
+
+<style lang="scss" scoped>
+@use 'styles/formPage.scss';
+</style>
+```
+
+### 弹窗表单（EditDialog）
+
+```vue
+<el-dialog title="编辑" :visible.sync="visible" width="560px" @close="handleClose">
+  <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+    <el-form-item label="名称" prop="name">
+      <el-input v-model="form.name" />
+    </el-form-item>
+  </el-form>
+  <span slot="footer">
+    <el-button @click="handleClose">取消</el-button>
+    <el-button type="primary" :loading="submitting" @click="handleSubmit">确定</el-button>
+  </span>
+</el-dialog>
+```
+
+```js
+// EditDialog 内 visible 常用 computed + emit
+computed: {
+  visible: {
+    get() { return this.value },
+    set(val) { this.$emit('input', val) },
+  },
+},
+props: {
+  value: { type: Boolean, default: false },
+  record: { type: Object, default: null },
+},
+```
+
+### 详情页
+
+- 只读：`el-form` `:disabled="true"` 或 `el-descriptions` / 纯文本
+- 数据 `loadDetail` 一次赋值 `this.detail = res.data`
+- 空态：`el-empty`
+
+---
+
+## 复杂页（工作台 / 双栏 / Tab）
+
+```
+views/order/workbench/
+├── index.vue              # 布局 + 事件编排
+├── services.js
+├── constants.js
+└── components/
+    ├── SummaryCards/index.vue
+    ├── TaskPanel/index.vue
+    └── index.js
+```
+
+| 区块 | 职责 |
+|------|------|
+| `index.vue` | `el-row` / `el-tabs` 布局，调用子组件，传递 props |
+| 子组件 | 单一 UI 区块；`props` 收数据，`$emit` 抛事件 |
+| 各区块 loading | 各自 `data.loading`，或父级统一管理 |
+
+```vue
+<!-- index.vue -->
+<SummaryCards v-loading="summaryLoading" :data="summary" />
+<TaskPanel :list="tasks" :loading="taskLoading" @refresh="loadTasks" />
+```
+
+```js
+methods: {
+  async loadSummary() {
+    this.summaryLoading = true
+    try {
+      const res = await GetSummary()
+      this.summary = res.data || {}
+    } finally {
+      this.summaryLoading = false
+    }
+  },
+},
+```
+
+**1 个 hook 对应 1 个数据域**（Vue 3）→ Vue 2 对应 **1 组 data 字段 + methods** 或 **1 个 mixin**。
+
+---
+
+## 状态与异步（Vue 2）
+
+### 存放原则
+
+| 数据 | 存放 |
+|------|------|
+| 单页列表/表单 | 页面 `data` + `methods` |
+| 跨模块（用户、权限） | Vuex `store/modules/` |
+| 弹窗 visible | 页面 `data` 或 `.sync` |
+| 服务端数据 | 接口赋值，**禁止 mock** |
+
+### 异步三态
+
+```js
+data() {
+  return { loading: false, error: '', list: [] }
+},
+methods: {
+  async reload() {
+    this.loading = true
+    this.error = ''
+    try {
+      const res = await GetList(this.params)
+      this.list = res.data || []
+    } catch (e) {
+      this.error = '加载失败，请重试'
+      this.list = []
+    } finally {
+      this.loading = false
+    }
+  },
+},
+```
+
+```vue
+<div v-loading="loading">
+  <el-alert v-if="error" type="error" :title="error" show-icon />
+  <el-empty v-else-if="!loading && !list.length" description="暂无数据" />
+  <template v-else><!-- 内容 --></template>
+</div>
+```
+
+### Vuex
+
+- 新建 module 仅当 **2+ 模块** 共享
+- 页面仍优先 `services.js` 调接口；store action 可封装通用请求
+
+---
+
+## 路由（routes.js）
+
+```js
+
+export default [
+  {
+    path: '/product/tag-list',
+    name: 'productTagList',
+    component: () => import(/* webpackChunkName: "productTagList" */ './tag-list/index.vue'),
+    meta: {
+      title: '商品标签',
+    },
+  },
+]
+```
+
+详见 `路由与权限规范.mdc`（`routes.js` 替代 `routes.ts`）。
+
+---
+
+## 高级表单控件
+
+含远程搜索、级联、上传、批量导入时，Read `高级表单控件开发指南.mdc` §Vue 2 对照，按 Element UI API 实现。
+
+---
+
+## 与 Vue 3 规则对照
+
+| Vue 3 | Vue 2（本指南） |
+|-------|-----------------|
+| `表单与详情页开发指南.mdc` | 本文 §表单页 |
+| `复杂页面开发指南.mdc` | 本文 §复杂页 |
+| `状态与异步数据规范.mdc` | 本文 §状态与异步 |
+| `hooks/useXxx.ts` | `methods` / `mixins/` |
+| Pinia | Vuex |
+| `services.ts` + `types.ts` | `services.js` + JSDoc |
+| `type="primary" link` | `type="text"` |
+
+---
+
+## 禁止
+
+1. 在 Vue 2 项目使用 `<script setup>`、Pinia、Element Plus
+2. 表单逻辑全堆 template 内联校验
+3. 无 loading 的接口请求
+4. 页面级列表数据塞 Vuex（除非跨模块共享）
+5. 混用 Vue 3 插槽语法 `#default`

@@ -1,0 +1,199 @@
+---
+description: Vue 3 工作台、仪表盘、多区块组合页的拆分与生成规范
+globs: **/*.{vue,ts}
+alwaysApply: false
+---
+# 复杂页面开发指南
+
+适用于：工作台、仪表盘、双栏/三栏布局、列表+侧边详情、多 Tab 组合页等**非标准单列表/单表单**页面。
+
+> **Vue 3（默认）**：每数据域一个 `hooks/useXxx.ts`
+
+---
+
+## 页面类型识别
+
+| 特征 | 类型 | 拆分策略 |
+|------|------|----------|
+| 多个独立数据区块（统计卡片 + 列表 + 图表） | 工作台/仪表盘 | 每区块独立子组件 + 独立 hook |
+| 左右/上下分栏，两侧可独立操作 | 双栏页 | `components/LeftPanel`、`RightPanel` |
+| 多 Tab，每 Tab 内容独立 | Tab 组合页 | `components/TabXxx/` + `hooks/useTabXxx.ts` |
+| 主列表 + 常驻侧边栏（如选人+绑客户） | 列表+侧栏页 | 侧栏与主表各一个 hook |
+| 步骤向导（多步表单） | 向导页 | `components/Step1/`…`StepN/` + `hooks/useWizard.ts` |
+
+**判定为复杂页时**：`index.vue` 以布局组装为主，业务逻辑下沉 `hooks/` 与子组件，**按职责合理拆分，非强制行数卡点**。
+
+---
+
+## 目录结构（复杂页）
+
+```
+views/<module>/workbench/
+├── index.vue                 # 布局组装为主
+├── services.ts               # 本页全部接口
+├── constants.ts
+├── types.ts
+├── hooks/
+│   ├── useSummaryCards.ts    # 统计卡片数据
+│   ├── useTaskList.ts        # 任务列表
+│   └── useWorkbench.ts       # 跨区块协调（可选）
+└── components/
+    ├── SummaryCards/index.vue
+    ├── TaskPanel/index.vue
+    ├── QuickActions/index.vue
+    └── index.ts
+```
+
+### 拆分原则
+
+1. **按 UI 区块拆组件**，不按「接口数量」拆文件
+2. **每个独立数据域一个 hook**（自己的 loading、list、reload）
+3. **跨区块联动**放 `useWorkbench.ts` 或 `index.vue` 的事件编排，不放子组件内部
+4. 子组件通过 `props` 收数据、`emit` 抛事件，**不直接 import 兄弟组件**
+
+---
+
+## index.vue 模板（复杂页入口）
+
+```vue
+<template>
+  <div class="page-container workbench-page">
+    <PageHead :title="PAGE_TITLE" />
+    <SummaryCards v-loading="summaryLoading" :data="summary" />
+    <el-row :gutter="16">
+      <el-col :span="16">
+        <TaskPanel
+          v-loading="taskLoading"
+          :list="tasks"
+          @refresh="reloadTasks"
+          @action="handleTaskAction"
+        />
+      </el-col>
+      <el-col :span="8">
+        <QuickActions @submit="handleQuickSubmit" />
+      </el-col>
+    </el-row>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { PAGE_TITLE } from './constants'
+import { useSummaryCards } from './hooks/useSummaryCards'
+import { useTaskList } from './hooks/useTaskList'
+import { SummaryCards, TaskPanel, QuickActions } from './components'
+
+const { summary, loading: summaryLoading } = useSummaryCards()
+const { tasks, loading: taskLoading, reload: reloadTasks } = useTaskList()
+
+const handleTaskAction = (payload: TaskActionPayload) => {
+  // 跨区块编排：如完成任务后刷新统计
+  reloadTasks()
+}
+
+const handleQuickSubmit = () => {
+  reloadTasks()
+}
+</script>
+```
+
+---
+
+## Hook 规范（复杂页）
+
+```ts
+// hooks/useTaskList.ts
+import { ref, onMounted } from 'vue'
+import { GetTaskList } from '../services'
+import type { TaskItem } from '../types'
+
+export const useTaskList = () => {
+  const tasks = ref<TaskItem[]>([])
+  const loading = ref(false)
+
+  const reload = async () => {
+    loading.value = true
+    try {
+      const res = await GetTaskList({})
+      tasks.value = res.data || []
+    } finally {
+      loading.value = false
+    }
+  }
+
+  onMounted(reload)
+  return { tasks, loading, reload }
+}
+```
+
+- 每个 hook **只负责一个数据域**
+- 返回 `{ data, loading, reload }` 等稳定命名
+- hook 内不操作 DOM、不访问 router（编排放 index.vue）
+
+---
+
+## 双栏页示例结构
+
+```
+views/trade/salesman-customers/
+├── index.vue
+├── services.ts
+├── hooks/
+│   ├── useSalesmanList.ts    # 左侧业务员列表
+│   └── useCustomerTable.ts   # 右侧客户表格
+└── components/
+    ├── SalesmanSidebar/index.vue
+    ├── CustomerTable/index.vue
+    └── index.ts
+```
+
+- 左右两侧**独立 loading**，一侧失败不阻塞另一侧
+- 选中态（如当前业务员 ID）放 `index.vue` 的 `ref`，通过 props 下发
+
+---
+
+## Tab 组合页
+
+```vue
+<template>
+  <el-tabs v-model="activeTab">
+    <el-tab-pane label="基础设置" name="basic">
+      <BasicSettings />
+    </el-tab-pane>
+    <el-tab-pane label="高级配置" name="advanced" lazy>
+      <AdvancedSettings />
+    </el-tab-pane>
+  </el-tabs>
+</template>
+```
+
+- 使用 `lazy` 延迟加载非首 Tab 内容
+- 每个 Tab 面板是独立子目录 `components/BasicSettings/`
+- Tab 间共享数据通过 `provide/inject` 或父级 `ref`，**禁止**子 Tab 互相 import
+
+---
+
+## 行数与拆分原则
+
+| 原则 | 说明 |
+|------|------|
+| 单文件行数 | **建议 ≤800 行**（见项目结构与命名规范）；职责混杂时应拆分，非强制卡点 |
+| `index.vue` | 以 template + 编排为主，数据请求放 hooks |
+| 子组件 | 单一 UI 区块；区块内逻辑复杂时提取 hook |
+| `services.ts` | 可按接口域分文件（如 `services/task.ts`） |
+
+**何时拆分**（满足任一即拆）：
+- 同一文件承担多个独立 UI 区块且可组件化
+- 某段逻辑可在其他页面复用
+- 单 hook / 子组件职责过多、难以阅读
+
+**不必拆分**：页面逻辑连贯、区块耦合紧密、拆后反而增加跳转成本。
+
+---
+
+## 禁止的反模式（复杂页）
+
+1. **单文件塞入全部区块逻辑且难以维护** — 应按 UI 区块拆组件/hooks
+2. **所有接口 import 进 index.vue** — 接口只在 services + hooks 中使用
+3. **子组件间直接通信** — 通过父组件或 provide/inject
+4. **多个无关区块共用一个 loading** — 独立 loading 提升体验
+5. **硬编码区块数据** — 无接口时用 `el-empty` + TODO，不 mock

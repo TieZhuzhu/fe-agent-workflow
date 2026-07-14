@@ -1,0 +1,152 @@
+---
+description: 前端通用代码规范。默认 Vue 3 + hooks + TS + Element Plus。仅当 package.json 为 vue@2.x 时 fallback 至 Vue 2 章节。
+alwaysApply: true
+---
+
+# 前端通用代码规范
+
+## 默认技术栈与版本判定
+
+**本规范默认用于开发 Vue 3 项目**，技术栈：
+
+- Vue 3 + **Composition API** + `<script setup lang="ts">`
+- 状态：**Pinia**
+- UI：**Element Plus**
+- 复用逻辑：页面内按职责抽 **`hooks/useXxx.ts`**（见 `Vue代码生成指南.mdc` §hooks 拆分边界）；跨模块 → `@/hooks/`
+- 接口与类型：页面目录 **`services.ts`** + **`types.ts`**（types 见 `TypeScript与types规范.mdc`）
+- 列表页：**HiTable** + `el-table-column`（复制 `.cursor/components/HiTable/`）
+
+### Vue 2 兼容（低优先级）
+
+仅当 `package.json` 中 `vue` 为 `^2.x` 时，改读 `Vue2代码生成指南.mdc` + `Vue代码生成指南.mdc` §Vue 2 + `HiTable-vue2/`。**本规范以下条款默认按 Vue 3 理解。**
+
+**同一项目、同一文件内禁止混用 Vue 2 / Vue 3 写法。**
+
+---
+
+## 命名
+
+- 文件名、class 名、属性名、变量名、方法名**统一使用英文**，禁止拼音及拼音缩写
+- 禁止中文变量名或对象 key（UI 展示文案除外）
+- 方法、变量使用驼峰命名，动词/名词区分，名副其实：不用缩写，不用让人推测的名称
+- 同一概念在多处使用统一术语；省略多余上下文，如用 `name` 而非 `theName`
+- 多个同类属性整合为对象：`product: { name: '', price: '' }`
+
+## 方法命名约定
+
+| 前缀     | 用途                                      | 示例                            |
+| -------- | ----------------------------------------- | ------------------------------- |
+| `handle` | 用户交互事件                              | `handleSearch`、`handleConfirm` |
+| `load`   | 数据请求/加载                             | `loadList`、`loadDetail`        |
+| `on`     | 回调/生命周期钩子内逻辑（Vue 2 项目沿用） | `onSubmit`、`onClear`           |
+
+## 代码质量
+
+- 精简逻辑，避免无意义嵌套；函数只做一件事，自顶向下编写
+- 删除冗余代码、无用字段、`console.log`（需要时从 git 历史找回）
+- **删除未使用引入**：删代码、改 import、重构后，同步移除未使用的 `import` 与具名导入项；交付前须 ESLint 零 error（见 **`lint-check` Skill**）
+- **`constants.js` 与 `utils.js` 分离**：枚举 / options / Tab 放 `constants.js`；格式化、校验、纯函数放 `utils.js`；禁止混放（见 **`项目结构与命名规范.mdc`**）
+- 静态不变数据用常量或 `this.xxx` 赋值，**不要**放入 `data` 做双向绑定
+- 形参不超过 2 个，超出使用对象传参 + 解构：`({ url, success })`
+- 多条件判断时考虑策略模式/映射表替代深层 if-else
+- 注意数据类型：`String`、`Number`、`Boolean` 不要随意转换
+- 合理使用空行或注释分隔模块/方法，避免代码串成一片
+
+## 注释
+
+- 接口返回字段、枚举类型、复杂方法需添加注释
+- AI 生成的复杂逻辑尽量添加详细注释
+- 未完成工作用 `// TODO:` 标记
+
+## 复用原则
+
+- 优先使用项目规定组件库，不随意封装已有能力
+- **常用数据处理优先 `lodash-es`**，禁止自写等价工具函数（见 `JavaScript通用代码生成指南.mdc` §数据处理）
+- 能使用公共样式/公共组件的，禁止 copy 造轮子
+- 多处复用样式提取到公共样式文件
+- **严禁**写入 mock 数据，除非用户明确要求；优先调用真实接口
+
+## 接口对接
+
+入参原样透传、出参原样绑定；禁止 `buildXxxQuery` 判空兜底与 `normalizeRows` 链式猜字段。详见 **`接口对接规范.mdc`**。
+
+**services 分层：** 页面 → `./services`；组件独有 → `components/<Name>/services.js`；**App.vue / store / 多模块共用** → **`@/services`**。详见 **`项目结构与命名规范.mdc`** §接口定义。
+
+## 路径别名
+
+引入文件时使用 `vue.config.ts` / `vite.config` 中定义的 alias，**禁止**深层相对路径：
+
+```js
+// ✅ 页面内接口
+import { GetCouponList } from './services'
+import { MoveProduct } from './components'
+
+// ✅ 全局公共接口（App / store / 多模块）
+import { GetUsableMenus, QueryUnreadCount } from '@/services'
+
+// ✅ 公共组件（目录即组件，不写 index.vue 后缀）
+import CategoryCascader from '@/components/CategoryCascader'
+import { usePermission } from '@/hooks/usePermission'
+
+// ❌ 深层相对路径
+import HiTable from '../../../components/HiTable'
+```
+
+常见 alias：`@` → `src`，`assets`，`components`，`js`，`styles`
+
+---
+
+## Skill 路由（Agent 自动选用）
+
+根据用户意图选用 Skill，**勿等用户说出文件名**：
+
+| 用户说 / 意图 | Skill |
+|---------------|-------|
+| 按 PRD / Figma / 原型 **新建**页面 | `feature-spec`（推荐）→ `feature-dev-workflow` |
+| **语雀 / 飞书 Markdown PRD** 粘贴 | `prd-markdown-ingest` → `feature-dev-workflow` |
+| **Axure 原型链接**、远程原型站 | `prototype-html-feature-dev` → `feature-dev-workflow`（交互页须 §F MCP P0） |
+| **verify** / **archive** / 验收 feature | `feature-verify` / `feature-archive` |
+| **verify-e2e** / UI 冒烟 | `feature-e2e-verify` |
+| **api-smoke** / HTTP 探针 / 验证响应 | `api-smoke` |
+| **单测** / test:unit | `unit-test-codegen` |
+| **已有页面**加字段、加列、加按钮 | `incremental-feature` |
+| **联调**、对接接口、OpenAPI、Swagger | `openapi-api-integration` 或 `api-integration` |
+| 报错、异常、不符合预期、点击无反应 | `bugfix-workflow` |
+| 文件太大、拆分页面 | `page-refactor` |
+| **全项目重构**、所有代码按 rules 改、继续重构到全部合规 | 先 `【spec】propose project-refactor` → `rules-refactor` → `【verify】project-refactor` |
+| **Vue2 升 Vue3**、迁移 Vue3 | 先 `【spec】propose vue3-migration` → `vue2-to-vue3-refactor` → `【verify】vue3-migration` |
+| **按规范优化**、整理代码（单页/单模块） | `code-normalize` |
+| review、检查规范 | `code-review` |
+| 路由、注册页面路由 | `route-permission` |
+| build/test 失败、CI 挂了 | `ci-fix` |
+| **lint**、eslint、未使用引入、改码后检查 | `lint-check`（大批量任务完成后自动衔接） |
+| 首次接入 / 扫描项目约定 | `project-bootstrap` |
+| 跨模块封装公共组件 | `shared-component` |
+| **新建 / 修改 Skill**、skill-creator、优化 skill description | `skill-creator` |
+
+Skill 完整索引见 `.cursor/skills/README.md`。
+
+---
+
+## 规范预加载（写码前强制）
+
+任何生成或修改 Vue/TS 代码前，须 Read `.cursor/skills/shared/rules-activation.md` 并按页面类型加载对应 rules。**未预加载不得写码。**
+
+复杂任务（新建页、跨模块组件、多文件改动）须**先输出预加载计划**再 Read；简单增量/bugfix 可省略计划但仍须读基线 rules。
+
+**首次接入项目**：先 [project-bootstrap](.cursor/skills/project-bootstrap/SKILL.md) 产出 `project-conventions.md`（记录 request 路径、布局组件等**扫描结果**，不覆盖本 rules 中的通用约定）。
+
+用户话术建议带场景词：**spec / analyze / verify / finish / archive / 新建 / 增量 / 联调 / 路由 / ci / bug / vue2 / review**。索引见 `.cursor/skills/README.md` §黄金路径。
+
+---
+
+## 配置约定（全文统一）
+
+完整对照表见 `.cursor/skills/shared/rules-activation.md` §配置约定。
+
+| 项 | Vue 3（默认） | Vue 2 |
+|----|---------------|-------|
+| request import | 以 `project-conventions.md` / 项目 services 为准 | 同左 |
+| services 导出 | `export const GetXxx = (data) => ...` | 同左（`.js` 无类型注解） |
+| 函数写法 | **箭头函数**（含 composable、utils、services 导出） | services 箭头；methods 用 Options API |
+| 文字按钮 | `type="primary" link` | `type="text"` |

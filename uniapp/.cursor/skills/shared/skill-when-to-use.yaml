@@ -1,0 +1,135 @@
+# Claude Code when_to_use 触发词（export-agent-host 注入 .claude/skills/*/SKILL.md）
+# 与 README §Skill 自动路由 对齐；authoring 源仍为 description，导出时追加 when_to_use
+
+schemaVersion: 1
+
+skills:
+  feature-dev-workflow:
+    when_to_use: |
+      User says 新建、按 PRD/Figma/原型开发、从零做页面；或已完成 spec/analyze 进入 implement。
+      Not for 增量改已有页（use incremental-feature).
+
+  feature-spec:
+    when_to_use: |
+      User says 【spec】、propose、先写规格/方案再编码；新建页且尚无 docs/features/<slug>/。
+      Full-project refactor: 【spec】propose project-refactor (fixed slug) before rules-refactor.
+
+  feature-analyze:
+    when_to_use: |
+      User says 【analyze】、spec 评审、implement 前一致性检查、ready 门禁。
+
+  feature-verify:
+    when_to_use: |
+      User says 【verify】、验收 feature、对照 spec/tasks/field-map 检查代码。
+
+  feature-finish:
+    when_to_use: |
+      User says 【finish】、verify 通过后 PR 收尾、准备合码。
+
+  feature-archive:
+    when_to_use: |
+      User says 【archive】、归档 spec、合并到 docs/specs/。
+
+  feature-e2e-verify:
+    when_to_use: |
+      User says 【verify-e2e】、UI 冒烟、浏览器回归、交互验收。
+
+  incremental-feature:
+    when_to_use: |
+      User says 增量、在这个页面加、补字段、列表加一列/加按钮；已有页面小改。
+
+  prd-markdown-ingest:
+    when_to_use: |
+      User pastes 语雀/飞书 Markdown PRD，或说 PRD Markdown 接入。
+
+  prd-feature-dev:
+    when_to_use: |
+      User says 按 PRD 开发、实现需求，且有 PRD 文案或截图（非纯 Markdown 粘贴主路径）。
+
+  prototype-html-feature-dev:
+    when_to_use: |
+      User says 按原型开发、Axure 链接、静态 HTML 转 uni-app 页面；含 JS 交互须 MCP/curl §F。
+
+  figma-feature-dev:
+    when_to_use: |
+      User pastes figma.com 链接并说按设计稿开发、Figma 实现。
+
+  spec-analyze-ui-images:
+    when_to_use: |
+      User uploads UI 截图/设计稿/原型图，需结构化分析布局与字段。
+
+  vue-page-codegen:
+    when_to_use: |
+      Invoked by feature-dev-workflow ③ 或独立【新建】写 uni-app 列表/表单/详情/弹层页。
+
+  api-integration:
+    when_to_use: |
+      User says 联调、对接接口、字段对一下、联调报错；无 OpenAPI spec 时。
+
+  openapi-api-integration:
+    when_to_use: |
+      User mentions OpenAPI、Swagger、openapi.json；有 spec 时优先于 api-integration。
+
+  api-smoke:
+    when_to_use: |
+      User says 接口探针、HTTP 冒烟、curl 验证、验证响应格式。
+
+  bugfix-workflow:
+    when_to_use: |
+      User says bug、【bug】、报错、异常、点击没反应、不符合预期。
+
+  code-review:
+    when_to_use: |
+      User says review、检查是否符合规范；只评不改。
+
+  ci-fix:
+    when_to_use: |
+      User says CI 挂了、build 失败、test 挂了、vue-tsc 报错。
+
+  lint-check:
+    when_to_use: |
+      User says lint、eslint、未使用引入；或大批量改码交付前。
+
+  unit-test-codegen:
+    when_to_use: |
+      User says 写单测、补测试、test:unit。
+
+  code-normalize:
+    when_to_use: |
+      User says 按规范优化、规范化、整理代码；单页/单模块范围。
+
+  page-refactor:
+    when_to_use: |
+      User says 拆分页面、文件太大了、提取子组件。
+
+  rules-refactor:
+    when_to_use: |
+      User says 全量重构、按 rules 重构、规范重构、project refactor、所有代码按规范改。
+      Requires docs/features/project-refactor/ ready (【spec】propose project-refactor).
+      Ends with 【verify】project-refactor. Single-page: use code-normalize.
+
+  vue2-to-vue3-refactor:
+    when_to_use: |
+      User says Vue2 升 Vue3、迁移 Vue3、upgrade vue3。
+      Requires docs/features/vue3-migration/ ready (【spec】propose vue3-migration).
+      Ends with 【verify】vue3-migration. Mutually exclusive with project-refactor.
+
+  project-bootstrap:
+    when_to_use: |
+      User says 扫描项目约定、bootstrap、对齐本项目配置；且无 project-conventions.md。
+
+  route-permission:
+    when_to_use: |
+      User says 加路由、注册 pages.json、新页面分包 path。
+
+  shared-component:
+    when_to_use: |
+      User says 跨模块封装、封装公共组件、多个模块共用。
+
+  spec-research-clarify:
+    when_to_use: |
+      复杂需求调研、方案评审、feature-dev 判定高复杂度需澄清。
+
+  skill-creator:
+    when_to_use: |
+      User says 新建 skill、创建 skill、优化 skill description、skill-creator。
